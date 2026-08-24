@@ -58,16 +58,24 @@ private class IntField(
     val label: String,
     val range: IntRange,
     val save: suspend (Int) -> Unit,
-    initial: String = "",
+    /** When set, blank input is valid and runs this instead of [save]. */
+    val onBlank: (suspend () -> Unit)? = null,
 ) {
-    var text by mutableStateOf(initial)
+    var text by mutableStateOf("")
     var error by mutableStateOf<String?>(null)
 
     /** Validates; returns false (and shows the error) when the input is bad. */
     suspend fun commit(): Boolean {
-        val value = text.trim().toIntOrNull()
+        val trimmed = text.trim()
+        if (trimmed.isBlank() && onBlank != null) {
+            error = null
+            onBlank.invoke()
+            return true
+        }
+        val value = trimmed.toIntOrNull()
         if (value == null || value !in range) {
-            error = "Enter a number between ${range.first} and ${range.last}."
+            error = "Enter a number between ${range.first} and ${range.last}" +
+                if (onBlank != null) ", or leave blank for auto." else "."
             return false
         }
         error = null
@@ -77,13 +85,13 @@ private class IntField(
 }
 
 @Composable
-private fun IntSettingField(field: IntField) {
+private fun IntSettingField(field: IntField, hint: String? = null) {
     OutlinedTextField(
         value = field.text,
         onValueChange = { field.text = it; field.error = null },
         label = { Text(field.label) },
         isError = field.error != null,
-        supportingText = field.error?.let { { Text(it) } },
+        supportingText = (field.error ?: hint)?.let { { Text(it) } },
         modifier = Modifier.fillMaxWidth(),
     )
 }
@@ -115,8 +123,13 @@ fun SettingsScreen() {
         IntField("Streak warning from hour (0-23)", 0..23, repo::setStreakWarnHour)
     }
     // Blank means "auto": use the rate observed from Duolingo's energy drawer.
-    var refillOverride by remember { mutableStateOf("") }
-    var refillError by remember { mutableStateOf<String?>(null) }
+    val refillOverride = remember {
+        IntField(
+            "Energy refill: minutes per unit (blank = auto)", 1..720,
+            save = { repo.setRefillMinutesOverride(it) },
+            onBlank = { repo.setRefillMinutesOverride(null) },
+        )
+    }
 
     LaunchedEffect(settings.sessionMinutes) { sessionMin.text = settings.sessionMinutes.toString() }
     LaunchedEffect(settings.fallbackLessonMinutes) { fallbackMin.text = settings.fallbackLessonMinutes.toString() }
@@ -125,7 +138,7 @@ fun SettingsScreen() {
     LaunchedEffect(settings.staleReadingMinutes) { staleMin.text = settings.staleReadingMinutes.toString() }
     LaunchedEffect(settings.streakWarnHour) { warnHour.text = settings.streakWarnHour.toString() }
     LaunchedEffect(settings.refillMinutesOverride) {
-        refillOverride = settings.refillMinutesOverride?.toString() ?: ""
+        refillOverride.text = settings.refillMinutesOverride?.toString() ?: ""
     }
 
     var jwtInput by remember { mutableStateOf("") }
@@ -143,21 +156,11 @@ fun SettingsScreen() {
         IntSettingField(fallbackMin)
 
         SettingsSectionHeader("Energy")
-        OutlinedTextField(
-            value = refillOverride,
-            onValueChange = { refillOverride = it; refillError = null },
-            label = { Text("Energy refill: minutes per unit (blank = auto)") },
-            isError = refillError != null,
-            supportingText = {
-                Text(
-                    refillError ?: (
-                        snapshot.session.observedRefillMinutesPerUnit
-                            ?.let { "Auto-detected from Duolingo: $it min/unit." }
-                            ?: "Nothing detected yet; default is ${Settings.DEFAULT_REFILL_MINUTES_PER_UNIT} min/unit."
-                        )
-                )
-            },
-            modifier = Modifier.fillMaxWidth(),
+        IntSettingField(
+            refillOverride,
+            hint = snapshot.session.observedRefillMinutesPerUnit
+                ?.let { "Auto-detected from Duolingo: $it min/unit." }
+                ?: "Nothing detected yet; default is ${Settings.DEFAULT_REFILL_MINUTES_PER_UNIT} min/unit.",
         )
         IntSettingField(minEnergy)
 
@@ -265,20 +268,8 @@ fun SettingsScreen() {
         Button(
             onClick = {
                 scope.launch {
-                    sessionMin.commit()
-                    fallbackMin.commit()
-                    minEnergy.commit()
-                    saverHour.commit()
-                    staleMin.commit()
-                    warnHour.commit()
-                    val refillText = refillOverride.trim()
-                    val refillValue = refillText.toIntOrNull()
-                    when {
-                        refillText.isBlank() -> repo.setRefillMinutesOverride(null)
-                        refillValue == null || refillValue !in 1..720 ->
-                            refillError = "Enter a number between 1 and 720, or leave blank for auto."
-                        else -> repo.setRefillMinutesOverride(refillValue)
-                    }
+                    listOf(sessionMin, fallbackMin, minEnergy, saverHour, staleMin, warnHour, refillOverride)
+                        .forEach { it.commit() }
                     if (jwtInput.isNotBlank()) {
                         val userId = DuolingoAuth.userIdFromJwt(jwtInput)
                         if (userId != null) {
