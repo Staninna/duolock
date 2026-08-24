@@ -1,141 +1,132 @@
 # DuoLock
 
-**An open-source Android app blocker that locks distracting apps until you complete your Duolingo lesson.**
+**Your doomscrolling apps stay locked until you finish a Duolingo lesson.**
 
-DuoLock turns Duolingo into the key that unlocks your social media. Pick the apps you want to control, and DuoLock blocks them until you complete a Duolingo lesson. Finish the lesson, earn a session of screen time, and when the session expires, the gate closes again.
-
-> **Do your Duolingo. Then get your social media.**
-
-![DuoLock concept](https://raw.githubusercontent.com/Staninna/duolock/main/docs/duolock-flow.svg)
-
-## Why DuoLock?
-
-If you are looking for an **Android app that blocks Instagram until you do Duolingo**, a **Duolingo productivity app**, or an **open-source social media blocker for Android**, DuoLock is built for exactly that idea.
-
-It is designed around a simple rule:
+I built DuoLock because my evenings kept disappearing into the same three apps, and willpower alone wasn't cutting it. It puts a gate in front of the apps you waste time in. Open a blocked app and Nox, the gatekeeper owl, steps in with his firefly Lumen. Do one Duolingo lesson and you earn a session of scroll time. When the clock runs out, the gate closes again.
 
 ```text
 ┌─────────────────────┐
 │ 🔒 Instagram        │
 │ 🔒 TikTok           │
 │ 🔒 YouTube          │
-│ 🔒 Reddit           │
 └──────────┬──────────┘
            │
            ▼
-    🦉 Do a Duolingo
+    🦉 One Duolingo
        lesson
            │
            ▼
 ┌─────────────────────┐
-│ 🔓 Apps unlocked    │
-│    for a session    │
+│ 🔓 30 min of scroll │
+│    time, then locked│
+│    again            │
 └─────────────────────┘
 ```
 
-## How it works
+## The loop
 
-1. **Pick your apps.** Choose which apps DuoLock guards. For example: Instagram, TikTok, YouTube, Reddit, or any other distracting app.
-2. **Hit the gate.** Opening a blocked app shows the DuoLock lock screen instead, with one button: *Do a lesson*.
-3. **Do a lesson.** DuoLock verifies your progress automatically. If you connect your Duolingo account, it watches your XP grow. Without an account token, time spent inside Duolingo can be used as a fallback.
-4. **Scroll, guilt-free.** A completed lesson earns a session of access. The default session is 30 minutes, and the timer only runs while a blocked app is actually on screen.
-5. **The gate closes again.** When your session expires, your distracting apps are locked again.
+1. **Pick your apps.** Choose which apps DuoLock guards in the Apps tab.
+2. **Hit the gate.** Opening a blocked app shows the lock screen instead: Nox, Lumen glowing with your live energy level, and one button: *Do a lesson*.
+3. **Do a lesson.** DuoLock verifies it on its own. With your Duolingo account connected it watches your XP grow; without a token, a configurable number of minutes inside Duolingo (default 5) counts as a lesson instead.
+4. **Scroll.** A finished lesson buys a session (default 30 minutes). The clock only burns while a blocked app is actually on screen, so checking one message doesn't eat your whole session.
+5. **Locked again.** When the session runs out, the gate closes. Halfway through, DuoLock reminds you that another lesson resets the clock, but only when you actually have the energy for one.
 
-## Energy-aware, never a dead end
+## Energy
 
-Duolingo lessons cost energy. DuoLock reads the energy meter from Duolingo's own UI using an accessibility service scoped to Duolingo only, and estimates regeneration from there.
+Duolingo lessons cost energy, and an app that locks you out of everything while you can't even do a lesson would be a dead end. DuoLock refuses to be that.
 
-If you do not have enough energy for a lesson, DuoLock does not leave you permanently locked out. Instead, the gate provides a free pass sized to the refill time and shows you how long you need to wait.
+### How DuoLock knows your energy
+
+An accessibility service, scoped to the Duolingo package only, reads the meter from Duolingo's own UI on three screens:
+
+- **The home screen** top bar, where energy is the rightmost counter.
+- **The energy drawer** (the fullscreen "X / 25" view). When the drawer shows its time-until-full timer, DuoLock also derives your personal refill rate from it. A full 25/25 meter is read from the progress text alone.
+- **Inside a lesson**, live. The in-lesson counter drains as you answer and sometimes Duolingo hands energy back; DuoLock records every change within seconds, so the value after a lesson is exact, not guessed.
+
+Between readings, DuoLock estimates regeneration from the last value and the refill rate: auto-detected from the drawer when possible, overridable in Settings, and 58 minutes per unit as the default.
+
+### Not enough energy: the free pass
+
+Below the lesson threshold (default 10 units, configurable) the gate will not trap you. Instead you get a free pass sized to the refill wait, capped at the session length so the meter is re-checked every round. The lock screen and notification tell you how long until the next lesson.
+
+Three rules keep the free pass honest:
+
+- **A recovered meter kills the pass.** The moment a reading shows enough energy for a lesson, the pass is revoked and the gate arms again. Only passes earned by an actual lesson survive.
+- **Old readings must be re-verified.** A low reading older than the re-check window (default 150 minutes) stops buying passes. The lock screen asks you to open Duolingo once; the reader stores the real meter within seconds, and you either bounce straight back to your app with an honest pass or the gate arms because you had energy all along.
+- **Streak Saver has no grace at all.** While it is armed, every free pass needs a reading fresh from the current Duolingo visit.
+
+### When the reader dies
+
+Android never restarts a crashed accessibility service; the system keeps claiming it is enabled while every reading silently goes stale. DuoLock checks for that gap every 30 seconds and sends one notification ("Nox fell asleep") telling you to toggle the reader off and on in the Setup tab.
 
 ## Streak Saver
 
-**Streak Saver** is an optional evening lockdown mode.
+An optional evening mode for people whose streak matters more than their evening. From a configurable hour (default 21:00) until midnight, *everything* is locked while today's XP is still zero: not just your blocked list. Your whitelist, phone, SMS, launcher, and Duolingo itself stay usable. Do the lesson and it lifts.
 
-From a configurable hour until midnight, everything is locked while today's Duolingo XP is still zero. Your whitelist, phone, SMS, and launcher remain available.
+It needs a connected account (the XP check is the trigger) and an active streak. Separately, DuoLock warns you once per evening when your streak is at risk, from a configurable hour.
 
-It is intentionally strict: do your lesson before the evening disappears into scrolling.
+## Settings reference
 
-## Features
+| Setting | Default | Range |
+|---|---|---|
+| Session length after a lesson | 30 min | 1–240 |
+| Minutes in Duolingo that count as a lesson (fallback) | 5 min | 1–60 |
+| Energy refill rate | auto-detected, else 58 min/unit | 1–720, blank = auto |
+| Energy needed to finish a lesson | 10 units | 1–25 |
+| Notify when entering a blocked app with time left | on | |
+| Halfway reminder | on | |
+| Re-check low energy after | 150 min | 15–1440 |
+| Streak warning from hour | 21 | 0–23 |
+| Streak Saver | off | |
+| Streak Saver start hour | 21 | 0–23 |
+| Streak Saver whitelist | empty | any apps |
 
-- **Duolingo-based app blocking** for Android
-- Block any set of apps behind a Duolingo lesson
-- XP-verified lessons via the Duolingo API
-- Time-in-Duolingo fallback that does not require an account token
-- Live Duolingo energy tracking
-- Automatic energy refill-rate detection
-- Free pass when there is not enough energy for a lesson
-- Streak Saver lockdown mode with a per-app whitelist
-- Persistent notification with a live countdown to the next possible lesson
-- Halfway reminder while a session is running
-- Evening warning when your Duolingo streak is at risk
-- Survives reboots
-- No ads
-- No analytics
-
-## Privacy
-
-DuoLock is designed to keep your data on your phone.
-
-The only network traffic is to the Duolingo API, and only if you connect your account. Your Duolingo token is stored in local app storage and is not sent anywhere else. The accessibility service is scoped to reading the Duolingo app's UI.
-
-DuoLock is not affiliated with Duolingo.
+Number fields save through the Save button; switches apply immediately.
 
 ## Setup
 
-DuoLock needs four Android permissions. Each permission is explained in the Setup tab and can be enabled from there.
+DuoLock walks you through this at first launch, and the Setup tab shows live status for each permission afterwards.
 
-| Permission | Why it is needed |
+| Permission | Why |
 |---|---|
-| Usage access | Detect which app is currently in the foreground |
-| Display over other apps | Show the DuoLock gate over blocked apps |
-| Accessibility, Duolingo only | Read the Duolingo energy meter |
-| Ignore battery optimization | Keep the gate monitor alive in the background |
+| Usage access | See which app is in the foreground |
+| Display over other apps | Show the lock screen over blocked apps |
+| Accessibility (Duolingo only) | Read the energy meter |
+| Ignore battery optimization | Keep the monitor alive in the background |
 
-On Xiaomi/HyperOS, also enable **Autostart** for DuoLock or the system may kill the monitor after a while.
+On Xiaomi/HyperOS, also enable **Autostart** for DuoLock in the system app settings, or MIUI kills the monitor after a while. DuoLock restarts itself after a reboot.
 
-Connecting your Duolingo account is optional. You can paste your `jwt_token` cookie value once, and the in-app guide explains how to obtain it from `duolingo.com` on a computer.
+### Connecting your Duolingo account
+
+Optional but recommended: it enables XP-verified lessons, Streak Saver, and the streak warning. Log in at duolingo.com on a computer, copy the `jwt_token` cookie value (starts with `eyJ`), and paste it in Settings. The in-app guide under the token field has the step-by-step. Without a token, the time-in-Duolingo fallback still works.
+
+## Privacy
+
+Everything stays on your phone. The only network traffic is to the Duolingo API, and only if you connect your account; the token lives in local app storage and goes nowhere else. The accessibility service can only see the Duolingo app. No ads, no analytics.
 
 ## Building
 
-DuoLock is a standard Android Gradle project.
-
-Open it in Android Studio, or build from the command line:
+A standard Android Gradle project. Open it in Android Studio, or:
 
 ```sh
 gradle assembleDebug
 adb install app/build/outputs/apk/debug/app-debug.apk
-```
-
-Requirements:
-
-- JDK 17
-- Android SDK
-- compileSdk 36
-- minSdk 26 (Android 8.0)
-
-Run unit tests with:
-
-```sh
 gradle test
 ```
 
+Requirements: JDK 17, Android SDK with compileSdk 36. Runs on Android 8.0 (minSdk 26) and up.
+
+Debug builds carry an extra Debug tab (hideable in Settings) with developer tools: fake energy readings, instant test passes, session reset, and reading age simulation. Release builds compile all of it away.
+
 ## Architecture
 
-The gate policy is implemented as one pure function:
+The whole gate policy is one pure function: `GateEngine.decide(snapshot, user, foreground, time) -> effects`. No Android, network, or clock dependencies inside, which is why the unit tests can cover the decision logic directly. Services execute the returned effects; Duolingo API traffic runs outside the decision path, so the lock screen never waits on the network.
 
-```text
-GateEngine.decide(state) -> effects
-```
-
-It has no Android, network, or clock dependencies. Unit tests cover the decision logic directly. Android services execute the resulting effects, while Duolingo API traffic runs outside the decision path so the lock screen never waits for the network.
-
-## Project status
-
-DuoLock is an independent open-source hobby project. It is currently focused on Android and on the specific workflow of **complete Duolingo first, then use distracting apps**.
+The energy reader is a separate accessibility service that funnels every observation through one channel into one storage transaction. Readings deduplicate against the store itself, so a value written by anything else (including the debug screen) is never shadowed by the reader's memory.
 
 ## Disclaimer
 
-DuoLock is not affiliated with, endorsed by, or sponsored by Duolingo. It communicates with the Duolingo API on behalf of your own account and reads Duolingo's UI on your own device.
+DuoLock is an independent hobby project, not affiliated with, endorsed by, or sponsored by Duolingo. It talks to the Duolingo API on behalf of your own account and reads Duolingo's UI on your own device.
 
 ## License
 
