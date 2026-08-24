@@ -239,7 +239,7 @@ fun DebugScreen() {
                     apiResult = when {
                         state.error != null -> "failed: ${state.error}"
                         user != null ->
-                            "ok in ${ms}ms: totalXp=${user.totalXp}, xpToday=${LessonVerifier.xpToday(user.xpGains)}"
+                            "ok in ${ms}ms: totalXp=${user.totalXp}, xpToday=${LessonVerifier.xpToday(user.xpGains, System.currentTimeMillis())}"
                         else -> "no data"
                     }
                 }

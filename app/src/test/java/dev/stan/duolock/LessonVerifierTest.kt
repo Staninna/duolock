@@ -36,6 +36,6 @@ class LessonVerifierTest {
             XpGain(xp = 20, time = midnight + 200),
             XpGain(xp = 99, time = midnight - 100), // yesterday
         )
-        assertEquals(30, LessonVerifier.xpToday(gains, zone, now))
+        assertEquals(30, LessonVerifier.xpToday(gains, now, zone))
     }
 }

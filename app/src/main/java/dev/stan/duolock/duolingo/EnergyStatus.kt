@@ -17,6 +17,8 @@ class EnergyStatus private constructor(
     val threshold: Int,
     val refillMinutesPerUnit: Int,
     val reading: EnergyReading?,
+    /** Local hour of the moment this status was derived for. */
+    private val hour: Int,
 ) {
     val noReading: Boolean get() = units == null
 
@@ -25,7 +27,7 @@ class EnergyStatus private constructor(
 
     /** Human wait time, or null when no wait applies (ready, or no reading). */
     val waitText: String?
-        get() = minutesUntilLesson?.takeIf { it > 0 }?.let { EnergyEstimator.formatWait(it) }
+        get() = minutesUntilLesson?.takeIf { it > 0 }?.let { EnergyEstimator.formatWait(it, hour) }
 
     /** The canonical "when is the next lesson possible" sentence. */
     fun nextLessonSentence(): String = when {
@@ -35,7 +37,11 @@ class EnergyStatus private constructor(
     }
 
     companion object {
-        fun of(snapshot: GateSnapshot, now: Long): EnergyStatus {
+        fun of(
+            snapshot: GateSnapshot,
+            now: Long,
+            zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+        ): EnergyStatus {
             val reading = snapshot.session.energy
             val rate = snapshot.refillMinutesPerUnit
             val threshold = snapshot.settings.minEnergyForLesson
@@ -45,7 +51,8 @@ class EnergyStatus private constructor(
             val untilLesson = reading?.let {
                 EnergyEstimator.minutesUntilEnergy(threshold, it.units, it.atMs, now, rate)
             }
-            return EnergyStatus(units, untilLesson, threshold, rate, reading)
+            val hour = java.time.Instant.ofEpochMilli(now).atZone(zone).hour
+            return EnergyStatus(units, untilLesson, threshold, rate, reading, hour)
         }
     }
 }

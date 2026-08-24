@@ -1,6 +1,6 @@
 package dev.stan.duolock.duolingo
 
-import java.time.LocalDate
+import java.time.Instant
 import java.time.ZoneId
 
 object LessonVerifier {
@@ -10,8 +10,9 @@ object LessonVerifier {
         snapshotXp in 0 until currentXp
 
     /** For status display: XP earned since local midnight. */
-    fun xpToday(gains: List<XpGain>, zone: ZoneId = ZoneId.systemDefault(), now: Long = System.currentTimeMillis()): Long {
-        val midnight = LocalDate.now(zone).atStartOfDay(zone).toEpochSecond()
+    fun xpToday(gains: List<XpGain>, now: Long, zone: ZoneId = ZoneId.systemDefault()): Long {
+        val midnight = Instant.ofEpochMilli(now).atZone(zone)
+            .toLocalDate().atStartOfDay(zone).toEpochSecond()
         return gains.filter { it.time in midnight..(now / 1000) }.sumOf { it.xp }
     }
 }

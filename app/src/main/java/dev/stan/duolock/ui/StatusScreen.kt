@@ -123,7 +123,7 @@ fun StatusScreen() {
                             }
                         }
                         Spacer(Modifier.height(4.dp))
-                        val xpToday = LessonVerifier.xpToday(user.xpGains)
+                        val xpToday = LessonVerifier.xpToday(user.xpGains, now)
                         Text("XP today: $xpToday")
                         Text("Total XP: ${user.totalXp}")
                         if (user.streak > 0) {

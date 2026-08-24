@@ -42,7 +42,7 @@ object EnergyEstimator {
      * fake-precise "454 min" helps nobody. Exception: late evening (22:00 on),
      * when the streak deadline is real, it stays exact minutes.
      */
-    fun formatWait(minutes: Long, hour: Int = java.time.LocalTime.now().hour): String {
+    fun formatWait(minutes: Long, hour: Int): String {
         if (hour >= 22) return "$minutes min (midnight is coming)"
         if (minutes < 25) return "$minutes min"
         val halves = (minutes + 29) / 30
