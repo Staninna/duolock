@@ -21,6 +21,15 @@ import kotlinx.coroutines.launch
 class EnergyReaderService : AccessibilityService() {
 
     companion object {
+        /**
+         * True while the service is actually bound. When system settings say
+         * the service is enabled but this is false, the watcher has died (a
+         * crashed accessibility service is not rebound until the user toggles
+         * it) — the monitor watches for that gap and tells the user.
+         */
+        @Volatile var running = false
+            private set
+
         private const val COUNTER_ID = "com.duolingo:id/energyCounter"
         private const val NUMBER_ID = "com.duolingo:id/countNumber"
         // In-lesson counter: "pacing" is Duolingo's internal name for energy.
@@ -230,9 +239,15 @@ class EnergyReaderService : AccessibilityService() {
         return obs
     }
 
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        running = true
+    }
+
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        running = false
         scope.cancel()
         super.onDestroy()
     }

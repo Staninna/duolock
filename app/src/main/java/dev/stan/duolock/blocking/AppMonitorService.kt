@@ -41,6 +41,9 @@ class AppMonitorService : LifecycleService() {
     private var tickState = GateEngine.TickState()
     private var lastFgsText: String? = null
     private var authErrorNotified = false
+    private var watcherDeadSince = 0L
+    private var watcherDeathNotified = false
+    private var lastWatcherCheckAt = 0L
     @Volatile private var userWanted = false
 
     override fun onCreate() {
@@ -94,6 +97,37 @@ class AppMonitorService : LifecycleService() {
         )
         tickState = decision.state
         decision.effects.forEach { execute(it) }
+        checkWatcherAlive()
+    }
+
+    /**
+     * Settings saying "enabled" while the service isn't bound means the energy
+     * reader crashed; Android won't rebind it until the user re-toggles it, so
+     * every reading from here on would be stale. One notification per death,
+     * with a minute of grace for boot / rebind races.
+     */
+    private fun checkWatcherAlive() {
+        val now = System.currentTimeMillis()
+        if (now - lastWatcherCheckAt < 30_000) return
+        lastWatcherCheckAt = now
+        val dead = dev.stan.duolock.permissions.SystemPermissions.isEnergyReaderEnabled(this) &&
+            !EnergyReaderService.running
+        if (!dead) {
+            watcherDeadSince = 0L
+            watcherDeathNotified = false
+            return
+        }
+        if (watcherDeadSince == 0L) {
+            watcherDeadSince = now
+        } else if (!watcherDeathNotified && now - watcherDeadSince > 60_000) {
+            watcherDeathNotified = true
+            Notifications.event(
+                this,
+                "Nox fell asleep",
+                "DuoGate can't see your Duolingo energy anymore, so the numbers will drift. " +
+                    "Turn the energy reader off and on again in the Setup tab to wake it."
+            )
+        }
     }
 
     private suspend fun execute(effect: GateEngine.Effect) {
