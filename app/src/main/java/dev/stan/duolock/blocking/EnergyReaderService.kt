@@ -72,8 +72,6 @@ class EnergyReaderService : AccessibilityService() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val observations = Channel<Observation>(Channel.CONFLATED)
-    private var lastStored = Int.MIN_VALUE
-    private var lastStoredAt = 0L
     private var lastTunedAt = 0L
 
     override fun onCreate() {
@@ -81,7 +79,27 @@ class EnergyReaderService : AccessibilityService() {
         scope.launch {
             val repo = SettingsRepository.get(this@EnergyReaderService)
             for (obs in observations) {
-                repo.recordEnergy(obs.energy, obs.atMs, obs.minutesPerUnit)
+                try {
+                    // Dedupe against the STORE, not service memory: anything
+                    // else (the debug screen, a reinstall) may have written a
+                    // different value since we last did, and a skipped write
+                    // then leaves the gate acting on stale energy. Skipping
+                    // same-value re-stores also preserves the partial regen
+                    // progress tracked from the stored timestamp.
+                    val cur = repo.currentSnapshot().session.energy
+                    val duplicate = obs.minutesPerUnit == null && cur != null &&
+                        cur.units == obs.energy && obs.atMs - cur.atMs < 60_000
+                    if (duplicate) continue
+                    android.util.Log.d(
+                        "DuoGateEnergy", "stored energy=${obs.energy} rate=${obs.minutesPerUnit}"
+                    )
+                    repo.recordEnergy(obs.energy, obs.atMs, obs.minutesPerUnit)
+                } catch (e: Exception) {
+                    // A failed write loses one observation; a crash here kills
+                    // the whole accessibility service until the user re-toggles
+                    // it, which is far worse.
+                    android.util.Log.w("DuoGateEnergy", "recordEnergy failed", e)
+                }
             }
         }
     }
@@ -94,10 +112,6 @@ class EnergyReaderService : AccessibilityService() {
             val counter = readCounterById(root) ?: readHomeTopBar(root)
             val energy = drawer?.energy ?: counter?.takeIf { it in 0..99 } ?: return
 
-            if (drawer == null && energy == lastStored && now - lastStoredAt < 60_000) return
-            lastStored = energy
-            lastStoredAt = now
-            android.util.Log.d("DuoGateEnergy", "stored energy=$energy rate=${drawer?.minutesPerUnit}")
             observations.trySend(Observation(energy, now, drawer?.minutesPerUnit))
         } catch (_: Exception) {
             // never crash the accessibility pipeline
