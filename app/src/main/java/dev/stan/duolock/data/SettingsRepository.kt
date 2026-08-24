@@ -32,6 +32,9 @@ data class Settings(
     val streakSaverEnabled: Boolean = false,
     val streakSaverStartHour: Int = 21,
     val streakSaverWhitelist: Set<String> = emptySet(),
+    // Debug builds only: whether the Debug tab is shown. Release builds have
+    // no debug screen at all, so this flag is meaningless there.
+    val showDebugTab: Boolean = true,
 ) {
     val hasAuth: Boolean get() = jwt.isNotBlank() && userId > 0
 
@@ -96,6 +99,7 @@ class SettingsRepository(private val context: Context) {
         val STREAK_SAVER = booleanPreferencesKey("streak_saver_enabled")
         val STREAK_SAVER_HOUR = intPreferencesKey("streak_saver_start_hour")
         val STREAK_SAVER_ALLOWED = stringSetPreferencesKey("streak_saver_whitelist")
+        val SHOW_DEBUG_TAB = booleanPreferencesKey("show_debug_tab")
     }
 
     val snapshot: Flow<GateSnapshot> = context.dataStore.data.map { p ->
@@ -113,6 +117,7 @@ class SettingsRepository(private val context: Context) {
                 streakSaverEnabled = p[Keys.STREAK_SAVER] ?: defaults.streakSaverEnabled,
                 streakSaverStartHour = p[Keys.STREAK_SAVER_HOUR] ?: defaults.streakSaverStartHour,
                 streakSaverWhitelist = p[Keys.STREAK_SAVER_ALLOWED] ?: defaults.streakSaverWhitelist,
+                showDebugTab = p[Keys.SHOW_DEBUG_TAB] ?: defaults.showDebugTab,
             ),
             session = SessionState(
                 remainingAllowanceMs = p[Keys.REMAINING] ?: 0L,
@@ -223,6 +228,9 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setStreakSaverStartHour(hour: Int) =
         context.dataStore.edit { it[Keys.STREAK_SAVER_HOUR] = hour.coerceIn(0, 23) }
+
+    suspend fun setShowDebugTab(show: Boolean) =
+        context.dataStore.edit { it[Keys.SHOW_DEBUG_TAB] = show }
 
     suspend fun setStreakSaverWhitelist(pkgs: Set<String>) =
         context.dataStore.edit { it[Keys.STREAK_SAVER_ALLOWED] = pkgs }

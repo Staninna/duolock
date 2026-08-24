@@ -53,9 +53,10 @@ enum class HomeTab(val label: String) {
     STATUS("Status"), APPS("Apps"), SETTINGS("Settings"), SETUP("Setup"), DEBUG("Debug");
 
     companion object {
-        // The Debug tab (and its screen) only exists in debug builds.
-        val visible: List<HomeTab> =
-            if (BuildConfig.DEBUG) entries else entries - DEBUG
+        // The Debug tab (and its screen) only exists in debug builds, and even
+        // there it can be hidden from Settings.
+        fun visible(showDebugTab: Boolean): List<HomeTab> =
+            if (BuildConfig.DEBUG && showDebugTab) entries else entries - DEBUG
     }
 }
 
@@ -77,10 +78,12 @@ fun DuoGateUi() {
         return
     }
     var tab by rememberSaveable { mutableStateOf(HomeTab.STATUS) }
+    val visibleTabs = HomeTab.visible(settings.showDebugTab)
+    if (tab !in visibleTabs) tab = HomeTab.STATUS
     Scaffold { padding ->
         Column(Modifier.padding(padding)) {
-            TabRow(selectedTabIndex = HomeTab.visible.indexOf(tab)) {
-                HomeTab.visible.forEach { t ->
+            TabRow(selectedTabIndex = visibleTabs.indexOf(tab)) {
+                visibleTabs.forEach { t ->
                     Tab(
                         selected = tab == t,
                         onClick = { tab = t },

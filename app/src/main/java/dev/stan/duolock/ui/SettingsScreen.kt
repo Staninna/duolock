@@ -170,6 +170,18 @@ fun SettingsScreen() {
             style = MaterialTheme.typography.bodySmall,
         )
 
+        if (dev.stan.duolock.BuildConfig.DEBUG) {
+            SettingsSectionHeader("Developer")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(
+                    checked = settings.showDebugTab,
+                    onCheckedChange = { on -> scope.launch { repo.setShowDebugTab(on) } },
+                )
+                Spacer(Modifier.width(12.dp))
+                Text("Show the Debug tab")
+            }
+        }
+
         SettingsSectionHeader("Duolingo account")
         OutlinedTextField(
             value = jwtInput,
