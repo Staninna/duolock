@@ -30,7 +30,7 @@ class EnergyStatus private constructor(
     /** The canonical "when is the next lesson possible" sentence. */
     fun nextLessonSentence(): String = when {
         noReading -> "No energy reading yet. Open Duolingo once so DuoGate can see the meter."
-        waitText != null -> "Next lesson possible in about $waitText."
+        waitText != null -> "Next lesson in about $waitText."
         else -> "You have enough energy for a lesson right now."
     }
 

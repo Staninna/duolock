@@ -154,7 +154,7 @@ class GateEngineTest {
             snap(session = session),
             state = GateEngine.TickState(lastForegroundPkg = "com.other.app"),
         )
-        assertTrue(d.effects.filterIsInstance<Effect.Notify>().any { it.title == "Gate check: open" })
+        assertTrue(d.effects.filterIsInstance<Effect.Notify>().any { it.title == "Gate is open" })
     }
 
     @Test
@@ -289,6 +289,6 @@ class GateEngineTest {
         assertTrue(ready.effects.only<Effect.UpdateCountdown>().text.contains("enough energy"))
 
         val waiting = decide(snap(session = SessionState(energy = energy(3))), fg = null)
-        assertTrue(waiting.effects.only<Effect.UpdateCountdown>().text.contains("Next lesson possible"))
+        assertTrue(waiting.effects.only<Effect.UpdateCountdown>().text.contains("Next lesson in"))
     }
 }

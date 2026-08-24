@@ -145,7 +145,7 @@ object GateEngine {
             // allowance clock stays in the background: the only time the user
             // sees is when the next lesson is actually possible.
             if (enteredBlockedApp) {
-                effects += Effect.Notify("Gate check: open", energy.nextLessonSentence())
+                effects += Effect.Notify("Gate is open", energy.nextLessonSentence())
             }
             // The allowance only burns while a blocked app is actually on screen.
             if (inBlockedApp) {
@@ -182,7 +182,7 @@ object GateEngine {
             effects += Effect.Notify(
                 "Time's up",
                 if (energy.waitText != null)
-                    "Next lesson possible in about ${energy.waitText}."
+                    "Next lesson in about ${energy.waitText}."
                 else
                     "You have enough energy. One lesson buys the next round."
             )
@@ -221,7 +221,7 @@ object GateEngine {
                 effects += Effect.Notify(
                     "Unlocked",
                     if (energy.waitText != null)
-                        "Lesson done. Next lesson possible in about ${energy.waitText}."
+                        "Lesson done. Next lesson in about ${energy.waitText}."
                     else
                         "Lesson done. You already have energy for another one."
                 )

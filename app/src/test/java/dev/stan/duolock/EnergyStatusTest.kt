@@ -41,7 +41,7 @@ class EnergyStatusTest {
         assertEquals(3, s.units)
         assertTrue(s.lowForLesson)
         assertTrue(s.minutesUntilLesson!! > 0)
-        assertTrue(s.nextLessonSentence().startsWith("Next lesson possible"))
+        assertTrue(s.nextLessonSentence().startsWith("Next lesson in"))
     }
 
     @Test
