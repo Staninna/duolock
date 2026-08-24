@@ -37,6 +37,7 @@ import dev.stan.duolock.data.GateSnapshot
 import dev.stan.duolock.data.GrantSource
 import dev.stan.duolock.data.SettingsRepository
 import dev.stan.duolock.duolingo.DuolingoRepository
+import dev.stan.duolock.duolingo.DebugUserOverride
 import dev.stan.duolock.duolingo.EnergyEstimator
 import dev.stan.duolock.duolingo.EnergyStatus
 import dev.stan.duolock.duolingo.LessonVerifier
@@ -175,6 +176,31 @@ fun DebugScreen() {
                 "It only activates with a token set, a streak > 0 and zero XP today.",
             style = MaterialTheme.typography.bodySmall,
         )
+        var fakeUser by remember { mutableStateOf(DebugUserOverride.mode) }
+        Text(
+            when (fakeUser) {
+                DebugUserOverride.Mode.OFF -> "Duolingo data: real account"
+                DebugUserOverride.Mode.STREAK_AT_RISK ->
+                    "Duolingo data: FAKE - 5-day streak, no XP today (Saver trigger state)"
+                DebugUserOverride.Mode.LESSON_DONE ->
+                    "Duolingo data: FAKE - 5-day streak, lesson done today"
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = {
+                DebugUserOverride.mode = DebugUserOverride.Mode.STREAK_AT_RISK
+                fakeUser = DebugUserOverride.mode
+            }) { Text("Fake: streak at risk", maxLines = 1) }
+            OutlinedButton(onClick = {
+                DebugUserOverride.mode = DebugUserOverride.Mode.LESSON_DONE
+                fakeUser = DebugUserOverride.mode
+            }) { Text("Fake: lesson done", maxLines = 1) }
+            OutlinedButton(onClick = {
+                DebugUserOverride.mode = DebugUserOverride.Mode.OFF
+                fakeUser = DebugUserOverride.mode
+            }) { Text("Real data", maxLines = 1) }
+        }
         Button(
             onClick = {
                 scope.launch {

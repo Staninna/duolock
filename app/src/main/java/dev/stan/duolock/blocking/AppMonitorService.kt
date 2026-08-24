@@ -80,7 +80,16 @@ class AppMonitorService : LifecycleService() {
 
     private suspend fun tick() {
         val snapshot = repo.currentSnapshot()
-        val user = duoRepo.state.value.user?.let {
+        val now = System.currentTimeMillis()
+        // Debug builds can substitute a synthetic user to exercise Streak
+        // Saver; the fake is stamped with the current time so it never ages.
+        val debugUser =
+            if (dev.stan.duolock.BuildConfig.DEBUG)
+                dev.stan.duolock.duolingo.DebugUserOverride.user(now)
+            else null
+        val user = debugUser?.let {
+            GateEngine.User(it.totalXp, it.xpGains, it.streak, fetchedAtMs = now)
+        } ?: duoRepo.state.value.user?.let {
             GateEngine.User(it.totalXp, it.xpGains, it.streak, duoRepo.state.value.fetchedAtMs)
         }
         val nowT = java.time.LocalTime.now()
