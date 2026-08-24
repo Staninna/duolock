@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <!-- Nox the night owl. Body -->
+    <path
+        android:fillColor="#6B4FBB"
+        android:pathData="M30,66 a30,34 0 1,0 60,0 a30,34 0 1,0 -60,0z" />
+    <!-- brow -->
+    <path
+        android:strokeColor="#9B82E0"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:pathData="M34,44 Q60,26 86,44" />
+    <!-- eye whites -->
+    <path
+        android:fillColor="#F5EDFF"
+        android:pathData="M32,56 a15,15 0 1,0 30,0 a15,15 0 1,0 -30,0z" />
+    <path
+        android:fillColor="#F5EDFF"
+        android:pathData="M58,56 a15,15 0 1,0 30,0 a15,15 0 1,0 -30,0z" />
+    <!-- pupils -->
+    <path
+        android:fillColor="#2A1B45"
+        android:pathData="M40,56 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0z" />
+    <path
+        android:fillColor="#2A1B45"
+        android:pathData="M66,56 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0z" />
+    <!-- glints -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M46.5,54 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M72.5,54 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0z" />
+    <!-- beak -->
+    <path
+        android:fillColor="#FFC24D"
+        android:pathData="M60,66 l-5,7 h10 z" />
+</vector>

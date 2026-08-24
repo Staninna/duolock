@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.DuoGate" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#191125</item>
+    </style>
+</resources>

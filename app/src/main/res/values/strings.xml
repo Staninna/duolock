@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="energy_reader_description">Reads the energy counter inside the Duolingo app so DuoGate never locks you out when you have no energy for a lesson. It only watches Duolingo, nothing else.</string>
+</resources>
