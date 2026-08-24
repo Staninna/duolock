@@ -373,6 +373,110 @@ class GateEngineTest {
     }
 
     @Test
+    fun `gate-open notification respects its setting`() {
+        val session = SessionState(remainingAllowanceMs = 60_000L, grantedAllowanceMs = 60_000L)
+        val quiet = decide(
+            snap(settings().copy(notifyGateOpen = false), session),
+            state = GateEngine.TickState(lastForegroundPkg = "com.other.app"),
+        )
+        assertTrue(quiet.effects.filterIsInstance<Effect.Notify>().none { it.title == "Gate is open" })
+    }
+
+    @Test
+    fun `halfway reminder respects its setting`() {
+        val session = SessionState(
+            remainingAllowanceMs = 29_000L, grantedAllowanceMs = 60_000L, energy = energy(20),
+        )
+        val quiet = decide(
+            snap(settings().copy(notifyHalfway = false), session),
+            state = GateEngine.TickState(lastForegroundPkg = blocked),
+        )
+        assertFalse(quiet.effects.any { it is Effect.MarkReminderSent })
+    }
+
+    @Test
+    fun `halfway reminder is suppressed while energy is too low for a lesson`() {
+        val session = SessionState(
+            remainingAllowanceMs = 29_000L, grantedAllowanceMs = 60_000L,
+            grantSource = GrantSource.ENERGY, energy = energy(3),
+        )
+        val d = decide(snap(session = session), state = GateEngine.TickState(lastForegroundPkg = blocked))
+        assertFalse(d.effects.any { it is Effect.MarkReminderSent })
+    }
+
+    @Test
+    fun `no streak warning when a lesson is already done or there is no streak`() {
+        val session = SessionState(energy = energy(20))
+        val lessonDone = GateEngine.User(
+            1000L, listOf(dev.stan.duolock.duolingo.XpGain(xp = 30, time = now / 1000)), 5, now,
+        )
+        val doneToday = decide(snap(session = session), user = lessonDone, fg = null, hour = 22)
+        assertTrue(doneToday.effects.filterIsInstance<Effect.Notify>().none { it.title == "Streak at risk" })
+        // warned-state still advances, so tomorrow gets a fresh check
+        assertEquals(100, doneToday.state.streakWarnedOnDay)
+
+        val noStreak = decide(snap(session = session), user = user(streak = 0), fg = null, hour = 22)
+        assertTrue(noStreak.effects.filterIsInstance<Effect.Notify>().none { it.title == "Streak at risk" })
+    }
+
+    @Test
+    fun `no streak warning or saver without a token`() {
+        val s = Settings(
+            blockedPackages = setOf(blocked),
+            streakSaverEnabled = true,
+            streakSaverStartHour = 21,
+        )
+        val d = decide(
+            snap(s, SessionState(energy = energy(20))), fg = "com.random.app", hour = 22,
+        )
+        assertTrue(d.effects.none { it is Effect.LaunchBlocker })
+        assertTrue(d.effects.filterIsInstance<Effect.Notify>().none { it.title == "Streak at risk" })
+        assertTrue(d.effects.none { it is Effect.WantFreshUser })
+    }
+
+    @Test
+    fun `streak saver never locks system-allowed packages`() {
+        val s = settings().copy(streakSaverEnabled = true, streakSaverStartHour = 21)
+        val d = decide(
+            snap(s, SessionState(energy = energy(20))), fg = "com.android.systemui", hour = 22,
+        )
+        assertTrue(d.effects.none { it is Effect.LaunchBlocker })
+    }
+
+    @Test
+    fun `expiring energy pass extension stays silent and sized to the wait`() {
+        val session = SessionState(
+            remainingAllowanceMs = 0L, grantedAllowanceMs = 60_000L,
+            grantSource = GrantSource.ENERGY, energy = energy(9),
+        )
+        val d = decide(snap(settings().copy(sessionMinutes = 30), session))
+        val grant = d.effects.only<Effect.Grant>()
+        assertEquals(GrantSource.ENERGY, grant.source)
+        // 1 unit missing at 58 min/unit -> 58 min, capped at 30
+        assertEquals(30 * 60_000L, grant.ms)
+        assertTrue(d.effects.none { it is Effect.Notify })
+        assertTrue(d.effects.none { it is Effect.ClearAllowance })
+    }
+
+    @Test
+    fun `pending block wants fresh xp only from inside duolingo or duogate`() {
+        val session = SessionState(pendingXpSnapshot = 900L, energy = energy(20))
+        val inDuo = decide(snap(session = session), user = user(totalXp = 900L), fg = "com.duolingo")
+        assertTrue(inDuo.effects.any { it is Effect.WantFreshUser })
+
+        val elsewhere = decide(snap(session = session), user = user(totalXp = 900L), fg = "com.other.app")
+        assertTrue(elsewhere.effects.none { it is Effect.WantFreshUser })
+    }
+
+    @Test
+    fun `a second tick inside an already blocked app does not begin a new block`() {
+        val session = SessionState(pendingXpSnapshot = 900L, energy = energy(20))
+        val d = decide(snap(session = session), user = user(totalXp = 900L))
+        assertTrue(d.effects.none { it is Effect.BeginBlock })
+        assertEquals(blocked, d.effects.only<Effect.LaunchBlocker>().pkg)
+    }
+
+    @Test
     fun `countdown text reflects the energy state`() {
         val noReading = decide(snap(), fg = null)
         assertTrue(noReading.effects.only<Effect.UpdateCountdown>().text.contains("No energy reading"))
