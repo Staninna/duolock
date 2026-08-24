@@ -81,7 +81,19 @@ fun DuoGateUi() {
         Column(Modifier.padding(padding)) {
             TabRow(selectedTabIndex = HomeTab.visible.indexOf(tab)) {
                 HomeTab.visible.forEach { t ->
-                    Tab(selected = tab == t, onClick = { tab = t }, text = { Text(t.label) })
+                    Tab(
+                        selected = tab == t,
+                        onClick = { tab = t },
+                        text = {
+                            // Five tabs leave no room for "Settings" at the
+                            // default size; never let a label wrap.
+                            Text(
+                                t.label,
+                                maxLines = 1,
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        },
+                    )
                 }
             }
             when (tab) {

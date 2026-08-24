@@ -3,6 +3,8 @@ package dev.stan.duolock.ui
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,6 +44,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Developer tooling. Debug builds only; release builds get an empty stub. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DebugScreen() {
     val context = LocalContext.current
@@ -140,20 +143,22 @@ fun DebugScreen() {
                 }
             }) { Text("Set") }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // FlowRow, not Row: three preset buttons don't fit one line on a
+        // phone, and a squeezed OutlinedButton renders its label vertically.
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = {
                 scope.launch { repo.recordEnergy(0, System.currentTimeMillis()) }
-            }) { Text("Empty (0)") }
+            }) { Text("Empty (0)", maxLines = 1) }
             OutlinedButton(onClick = {
                 scope.launch {
                     repo.recordEnergy(
                         (settings.minEnergyForLesson - 1).coerceAtLeast(0), System.currentTimeMillis()
                     )
                 }
-            }) { Text("Just below threshold") }
+            }) { Text("Just below threshold", maxLines = 1) }
             OutlinedButton(onClick = {
                 scope.launch { repo.recordEnergy(EnergyEstimator.MAX_ENERGY, System.currentTimeMillis()) }
-            }) { Text("Full (25)") }
+            }) { Text("Full (25)", maxLines = 1) }
         }
         OutlinedButton(
             onClick = {
