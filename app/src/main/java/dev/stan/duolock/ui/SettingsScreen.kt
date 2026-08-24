@@ -34,7 +34,6 @@ import androidx.compose.ui.unit.dp
 import dev.stan.duolock.data.GateSnapshot
 import dev.stan.duolock.data.Settings
 import dev.stan.duolock.data.SettingsRepository
-import dev.stan.duolock.duolingo.DuolingoAuth
 import kotlinx.coroutines.launch
 
 @Composable
@@ -141,8 +140,9 @@ fun SettingsScreen() {
         refillOverride.text = settings.refillMinutesOverride?.toString() ?: ""
     }
 
-    var jwtInput by remember { mutableStateOf("") }
-    var jwtStatus by remember { mutableStateOf("") }
+    val token = remember {
+        TokenField(repo, "That doesn't parse as a JWT. Copy the whole jwt_token cookie value.")
+    }
 
     Column(
         Modifier
@@ -220,12 +220,7 @@ fun SettingsScreen() {
         }
 
         SettingsSectionHeader("Duolingo account")
-        OutlinedTextField(
-            value = jwtInput,
-            onValueChange = { jwtInput = it },
-            label = { Text("Duolingo token (starts with eyJ)") },
-            modifier = Modifier.fillMaxWidth(),
-        )
+        TokenTextField(token)
         var guideOpen by remember { mutableStateOf(false) }
         Card(
             Modifier
@@ -264,22 +259,12 @@ fun SettingsScreen() {
                 }
             }
         }
-        if (jwtStatus.isNotBlank()) Text(jwtStatus, style = MaterialTheme.typography.bodySmall)
         Button(
             onClick = {
                 scope.launch {
                     listOf(sessionMin, fallbackMin, minEnergy, saverHour, staleMin, warnHour, refillOverride)
                         .forEach { it.commit() }
-                    if (jwtInput.isNotBlank()) {
-                        val userId = DuolingoAuth.userIdFromJwt(jwtInput)
-                        if (userId != null) {
-                            repo.setAuth(jwtInput.trim(), userId)
-                            jwtStatus = "Saved. Duolingo user id $userId."
-                            jwtInput = ""
-                        } else {
-                            jwtStatus = "That doesn't parse as a JWT. Copy the whole jwt_token cookie value."
-                        }
-                    }
+                    token.commit()
                 }
             },
             modifier = Modifier.fillMaxWidth(),

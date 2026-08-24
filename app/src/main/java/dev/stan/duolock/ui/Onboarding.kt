@@ -14,12 +14,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -31,7 +29,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.stan.duolock.data.SettingsRepository
-import dev.stan.duolock.duolingo.DuolingoAuth
 import kotlinx.coroutines.launch
 
 /**
@@ -100,25 +97,12 @@ fun OnboardingFlow() {
                             "You can skip this: a few minutes inside Duolingo then counts as a lesson. " +
                             "The how-to guide lives in Settings under the token field."
                     )
-                    var token by remember { mutableStateOf("") }
-                    var status by remember { mutableStateOf("") }
-                    OutlinedTextField(
-                        value = token,
-                        onValueChange = { token = it },
-                        label = { Text("Duolingo token (starts with eyJ)") },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    if (status.isNotBlank()) Text(status, style = MaterialTheme.typography.bodySmall)
+                    val token = remember {
+                        TokenField(repo, "That doesn't parse as a token. You can also do this later in Settings.")
+                    }
+                    TokenTextField(token)
                     Button(
-                        onClick = {
-                            val userId = DuolingoAuth.userIdFromJwt(token)
-                            if (userId != null) {
-                                scope.launch { repo.setAuth(token.trim(), userId) }
-                                status = "Saved. Duolingo user id $userId."
-                            } else {
-                                status = "That doesn't parse as a token. You can also do this later in Settings."
-                            }
-                        },
+                        onClick = { scope.launch { token.commit() } },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Save token") }
                 }
