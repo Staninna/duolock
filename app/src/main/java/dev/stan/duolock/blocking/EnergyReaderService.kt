@@ -23,6 +23,9 @@ class EnergyReaderService : AccessibilityService() {
     companion object {
         private const val COUNTER_ID = "com.duolingo:id/energyCounter"
         private const val NUMBER_ID = "com.duolingo:id/countNumber"
+        // In-lesson counter: "pacing" is Duolingo's internal name for energy.
+        // The count drains (and sometimes refills) live during the lesson.
+        private const val PACING_ID = "com.duolingo:id/pacingNumber"
         private const val INFINITY_ID = "com.duolingo:id/infinityImage"
 
         // Fullscreen energy drawer: progress "0 / 25" and time-to-full "1D 0H".
@@ -53,6 +56,18 @@ class EnergyReaderService : AccessibilityService() {
         data class DrawerObservation(val energy: Int, val minutesPerUnit: Int)
 
         /**
+         * Current energy from the drawer's "current / max" text alone. The
+         * timer is absent when the meter is full, so this must not depend on
+         * it — otherwise a full meter is unrecordable.
+         */
+        fun parseProgressEnergy(progressText: String): Int? {
+            val m = PROGRESS_RE.find(progressText) ?: return null
+            val current = m.groupValues[1].toIntOrNull() ?: return null
+            val max = m.groupValues[2].toIntOrNull() ?: return null
+            return current.takeIf { it in 0..max && max in 1..99 }
+        }
+
+        /**
          * Derive the per-unit refill rate from the drawer's "time until full"
          * timer and its "current / max" progress text.
          */
@@ -73,6 +88,7 @@ class EnergyReaderService : AccessibilityService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val observations = Channel<Observation>(Channel.CONFLATED)
     private var lastTunedAt = 0L
+    private var lastMissLogAt = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -110,7 +126,20 @@ class EnergyReaderService : AccessibilityService() {
             val now = System.currentTimeMillis()
             val drawer = readDrawer(root, now)
             val counter = readCounterById(root) ?: readHomeTopBar(root)
-            val energy = drawer?.energy ?: counter?.takeIf { it in 0..99 } ?: return
+            val energy = drawer?.energy
+                ?: readDrawerProgress(root)
+                ?: counter?.takeIf { it in 0..99 }
+                ?: run {
+                    if (now - lastMissLogAt > 3_000) {
+                        lastMissLogAt = now
+                        android.util.Log.d(
+                            "DuoGateEnergy",
+                            "no reading: evt=${event?.eventType} src=${event?.className} " +
+                                "counter=$counter topbar=${debugTopBarNumbers(root)}"
+                        )
+                    }
+                    return
+                }
 
             observations.trySend(Observation(energy, now, drawer?.minutesPerUnit))
         } catch (_: Exception) {
@@ -120,8 +149,9 @@ class EnergyReaderService : AccessibilityService() {
 
     /** Older, id-based counter (still present on some screens like the drawer). */
     private fun readCounterById(root: AccessibilityNodeInfo): Int? {
-        val counter = root.findAccessibilityNodeInfosByViewId(COUNTER_ID)
-            ?.firstOrNull() ?: return null
+        val counter = root.findAccessibilityNodeInfosByViewId(COUNTER_ID)?.firstOrNull()
+            ?: root.findAccessibilityNodeInfosByViewId(PACING_ID)?.firstOrNull()
+            ?: return null
         val unlimited = counter.findAccessibilityNodeInfosByViewId(INFINITY_ID)
             ?.any { it.isVisibleToUser } == true
         if (unlimited) return EnergyEstimator.MAX_ENERGY
@@ -136,10 +166,26 @@ class EnergyReaderService : AccessibilityService() {
      * small number in the top strip of the screen.
      */
     private fun readHomeTopBar(root: AccessibilityNodeInfo): Int? {
+        val numbers = topStripNumbers(root)
+        // Two shapes qualify. The home toolbar: at least three separate
+        // counters (course/streak, gems, energy), energy rightmost. And the
+        // in-lesson screen: exactly one number, hugging the top-RIGHT corner —
+        // the live pacing counter (its view ids don't resolve, so position is
+        // all we have). Anything else is some other screen's number.
         val rootBounds = android.graphics.Rect().also { root.getBoundsInScreen(it) }
-        if (rootBounds.height() <= 0) return null
+        val qualifies = numbers.size >= 3 ||
+            (numbers.size == 1 && numbers[0].first >= rootBounds.right - rootBounds.width() / 5)
+        if (!qualifies) return null
+        val energy = numbers.maxBy { it.first }.second
+        return if (energy <= 30) energy else null
+    }
+
+    /** All bare numbers in the top strip of the screen, as (right edge, value). */
+    private fun topStripNumbers(root: AccessibilityNodeInfo): List<Pair<Int, Int>> {
+        val rootBounds = android.graphics.Rect().also { root.getBoundsInScreen(it) }
+        if (rootBounds.height() <= 0) return emptyList()
         val topStrip = rootBounds.top + rootBounds.height() / 8
-        val numbers = mutableListOf<Pair<Int, Int>>() // (right edge, value)
+        val numbers = mutableListOf<Pair<Int, Int>>()
         val bounds = android.graphics.Rect()
         fun walk(n: AccessibilityNodeInfo?, depth: Int) {
             if (n == null || depth > 25) return
@@ -151,12 +197,20 @@ class EnergyReaderService : AccessibilityService() {
             for (i in 0 until n.childCount) walk(n.getChild(i), depth + 1)
         }
         walk(root, 0)
-        // Only trust the strip when it looks like the home toolbar: at least
-        // three separate counters (course/streak, gems, energy). A lone number
-        // on some other screen never qualifies.
-        if (numbers.size < 3) return null
-        val energy = numbers.maxBy { it.first }.second
-        return if (energy <= 30) energy else null
+        return numbers
+    }
+
+    private fun debugTopBarNumbers(root: AccessibilityNodeInfo): String =
+        topStripNumbers(root).joinToString(",", "[", "]") { it.second.toString() }
+
+    /** The drawer's "current / max" text alone; works even when full. */
+    private fun readDrawerProgress(root: AccessibilityNodeInfo): Int? {
+        val text = root.findAccessibilityNodeInfosByViewId(PROGRESS_TEXT_ID)
+            ?.firstOrNull { it.isVisibleToUser }?.text?.toString()
+            ?: root.findAccessibilityNodeInfosByViewId(PROGRESS_TEXT_BASE_ID)
+                ?.firstOrNull { it.isVisibleToUser }?.text?.toString()
+            ?: return null
+        return parseProgressEnergy(text)
     }
 
     /** Fullscreen energy drawer, at most once a minute. */

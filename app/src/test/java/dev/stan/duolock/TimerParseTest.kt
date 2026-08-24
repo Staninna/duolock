@@ -44,6 +44,15 @@ class TimerParseTest {
     }
 
     @Test
+    fun `progress text alone yields energy even when the meter is full`() {
+        assertEquals(25, EnergyReaderService.parseProgressEnergy("25 / 25"))
+        assertEquals(20, EnergyReaderService.parseProgressEnergy("20 / 25"))
+        assertEquals(0, EnergyReaderService.parseProgressEnergy("0 / 25"))
+        assertNull(EnergyReaderService.parseProgressEnergy("full"))
+        assertNull(EnergyReaderService.parseProgressEnergy("30 / 25"))
+    }
+
+    @Test
     fun `drawer with nothing missing or junk text is rejected`() {
         assertNull(EnergyReaderService.parseDrawer("1D 0H", "25 / 25"))
         assertNull(EnergyReaderService.parseDrawer("soon", "5 / 25"))
