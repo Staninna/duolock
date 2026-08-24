@@ -214,27 +214,24 @@ class EnergyReaderService : AccessibilityService() {
     private fun debugTopBarNumbers(root: AccessibilityNodeInfo): String =
         topStripNumbers(root).joinToString(",", "[", "]") { it.second.toString() }
 
+    /** Text of the first visible node matching any of [ids], in order. */
+    private fun visibleText(root: AccessibilityNodeInfo, vararg ids: String): String? =
+        ids.firstNotNullOfOrNull { id ->
+            root.findAccessibilityNodeInfosByViewId(id)
+                ?.firstOrNull { it.isVisibleToUser }?.text?.toString()
+        }
+
     /** The drawer's "current / max" text alone; works even when full. */
     private fun readDrawerProgress(root: AccessibilityNodeInfo): Int? {
-        val text = root.findAccessibilityNodeInfosByViewId(PROGRESS_TEXT_ID)
-            ?.firstOrNull { it.isVisibleToUser }?.text?.toString()
-            ?: root.findAccessibilityNodeInfosByViewId(PROGRESS_TEXT_BASE_ID)
-                ?.firstOrNull { it.isVisibleToUser }?.text?.toString()
-            ?: return null
+        val text = visibleText(root, PROGRESS_TEXT_ID, PROGRESS_TEXT_BASE_ID) ?: return null
         return parseProgressEnergy(text)
     }
 
     /** Fullscreen energy drawer, at most once a minute. */
     private fun readDrawer(root: AccessibilityNodeInfo, now: Long): DrawerObservation? {
         if (now - lastTunedAt < 60_000) return null
-        val timerText = root.findAccessibilityNodeInfosByViewId(TIMER_ID)
-            ?.firstOrNull { it.isVisibleToUser }?.text?.toString() ?: return null
-        val progressText = (
-            root.findAccessibilityNodeInfosByViewId(PROGRESS_TEXT_ID)
-                ?.firstOrNull { it.isVisibleToUser }?.text?.toString()
-                ?: root.findAccessibilityNodeInfosByViewId(PROGRESS_TEXT_BASE_ID)
-                    ?.firstOrNull { it.isVisibleToUser }?.text?.toString()
-            ) ?: return null
+        val timerText = visibleText(root, TIMER_ID) ?: return null
+        val progressText = visibleText(root, PROGRESS_TEXT_ID, PROGRESS_TEXT_BASE_ID) ?: return null
         val obs = parseDrawer(timerText, progressText)
         if (dev.stan.duolock.BuildConfig.DEBUG) {
             android.util.Log.d("DuoGateEnergy", "drawer: timer='$timerText' progress='$progressText' -> $obs")
