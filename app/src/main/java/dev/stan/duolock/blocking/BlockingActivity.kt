@@ -84,9 +84,12 @@ class BlockingActivity : ComponentActivity() {
                     }
                 }
                 val energy = EnergyStatus.of(snapshot, now)
+                val readingAge = energy.reading?.let { now - it.atMs }
                 BlockScreen(
                     appLabel = blockedAppLabel,
                     energy = energy,
+                    staleLow = energy.lowForLesson && readingAge != null &&
+                        readingAge > snapshot.settings.staleReadingMinutes * 60_000L,
                     onOpenDuolingo = { openDuolingo() },
                     onGoHome = { goHome() },
                 )
@@ -124,6 +127,7 @@ class BlockingActivity : ComponentActivity() {
 private fun BlockScreen(
     appLabel: String,
     energy: EnergyStatus,
+    staleLow: Boolean = false,
     onOpenDuolingo: () -> Unit,
     onGoHome: () -> Unit,
 ) {
@@ -156,12 +160,17 @@ private fun BlockScreen(
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                if (lessonPossible)
-                    "Finish a Duolingo lesson to unlock your apps. " +
-                        "DuoGate checks automatically. Just come back when you're done."
-                else
-                    "Not enough energy for a lesson yet. About ${energy.waitText} " +
-                        "until you can do one. Open Duolingo and DuoGate will let you through in the meantime.",
+                when {
+                    staleLow ->
+                        "Nox thinks you're out of energy, but that reading is hours old. " +
+                            "Open Duolingo so he can check. If you're still empty, you go straight through."
+                    lessonPossible ->
+                        "Finish a Duolingo lesson to unlock your apps. " +
+                            "DuoGate checks automatically. Just come back when you're done."
+                    else ->
+                        "Not enough energy for a lesson yet. About ${energy.waitText} " +
+                            "until you can do one. Open Duolingo and DuoGate will let you through in the meantime."
+                },
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
             )

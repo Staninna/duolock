@@ -98,6 +98,53 @@ class GateEngineTest {
     }
 
     @Test
+    fun `stale low reading blocks instead of granting a pass`() {
+        // Reading of 3 units taken 3 hours ago: the estimate is still below
+        // the threshold, but the age demands re-verification.
+        val d = decide(
+            snap(session = SessionState(energy = EnergyReading(3, now - 3 * 60 * 60_000L))),
+        )
+        assertEquals(blocked, d.effects.only<Effect.LaunchBlocker>().pkg)
+        assertTrue(d.effects.filterIsInstance<Effect.Grant>().isEmpty())
+    }
+
+    @Test
+    fun `fresh low reading still grants the pass without a lock screen`() {
+        val d = decide(
+            snap(session = SessionState(energy = EnergyReading(3, now - 60_000L))),
+        )
+        d.effects.only<Effect.Grant>()
+        assertTrue(d.effects.filterIsInstance<Effect.LaunchBlocker>().isEmpty())
+    }
+
+    @Test
+    fun `armed streak saver verifies even a recent low reading`() {
+        // 21:30 with Streak Saver on: no grace at all — a 10-minute-old low
+        // reading (older than the fresh window) must be re-read.
+        val s = settings().copy(streakSaverEnabled = true, streakSaverStartHour = 21)
+        val d = decide(
+            snap(settings = s, session = SessionState(energy = EnergyReading(3, now - 10 * 60_000L))),
+            hour = 22,
+        )
+        assertTrue(d.effects.filterIsInstance<Effect.Grant>().isEmpty())
+        d.effects.only<Effect.LaunchBlocker>()
+    }
+
+    @Test
+    fun `bounce-back from Duolingo needs a fresh reading, not the stale one`() {
+        // In Duolingo with a pending block, but the low reading predates the
+        // visit by hours: no pass yet — wait for the reader to store.
+        val d = decide(
+            snap(session = SessionState(
+                pendingXpSnapshot = 1000L,
+                energy = EnergyReading(3, now - 3 * 60 * 60_000L),
+            )),
+            fg = "com.duolingo",
+        )
+        assertTrue(d.effects.filterIsInstance<Effect.Grant>().isEmpty())
+    }
+
+    @Test
     fun `energy pass is revoked and the gate blocks once energy recovers`() {
         // A live ENERGY pass, but a fresh reading now shows plenty of energy.
         val d = decide(

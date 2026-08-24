@@ -16,6 +16,9 @@ object GateEngine {
 
     const val POLL_MS = 1_000L
     private const val FLUSH_EVERY_MS = 10_000L
+
+    /** A reading this fresh counts as verified (the reader stores within seconds). */
+    private const val FRESH_READING_MS = 5 * 60_000L
     /** A user fetch older than this doesn't count for the evening streak warning. */
     private const val STREAK_WARN_MAX_AGE_MS = 10 * 60_000L
 
@@ -129,6 +132,14 @@ object GateEngine {
             if (saverActive) "Streak Saver on. $countdownBase" else countdownBase
         )
 
+        // Stale-low: the meter said "not enough" long enough ago that it must
+        // be re-read before it buys any more free passes. The lock screen's
+        // "open Duolingo" path is the re-read.
+        val readingAgeMs = energy.reading?.let { now - it.atMs }
+        val staleLimit = if (saverArmed) 0L else settings.staleReadingMinutes * 60_000L
+        val lowVerified = energy.lowForLesson &&
+            readingAgeMs != null && readingAgeMs <= staleLimit
+
         val fg = foreground ?: return Decision(effects, st)
         val inBlockedApp = if (saverActive) {
             fg !in settings.streakSaverWhitelist && fg !in systemAllowedPackages
@@ -184,7 +195,7 @@ object GateEngine {
         // the app the user is in.
         if (!energyPassObsolete && session.grantedAllowanceMs != 0L && remaining <= 0) {
             st = st.copy(unflushedConsumedMs = 0L)
-            if (energy.lowForLesson && inBlockedApp) {
+            if (lowVerified && inBlockedApp) {
                 effects += energyPass(energy, settings.sessionMinutes, silent = true)
                 return Decision(effects, st)
             }
@@ -211,8 +222,12 @@ object GateEngine {
 
             // Instant bounce-back: the lock sent the user into Duolingo, the
             // reader stored the real meter, and it's below the threshold. Grant
-            // the pass and return them to the app they wanted.
-            if (fg == duolingoPackage && energy.lowForLesson) {
+            // the pass and return them to the app they wanted. Only a reading
+            // taken minutes ago counts — this is the verification a stale-low
+            // reading was sent here for, so the pre-visit value must not do.
+            if (fg == duolingoPackage && energy.lowForLesson &&
+                readingAgeMs != null && readingAgeMs <= FRESH_READING_MS
+            ) {
                 effects += energyPass(energy, settings.sessionMinutes, silent = false)
                 st.lastBlockedPkg?.let { effects += Effect.LaunchApp(it) }
                 return Decision(effects, st)
@@ -240,8 +255,13 @@ object GateEngine {
         }
 
         if (inBlockedApp) {
-            // Never block below the lesson threshold: the gate would be a dead end.
-            if (energy.lowForLesson) {
+            // Never block below the lesson threshold: the gate would be a dead
+            // end. But only a reading recent enough to trust skips the lock —
+            // a stale one falls through to the lock screen, whose "open
+            // Duolingo" path re-reads the meter and bounces the user back.
+            if (lowVerified ||
+                (energy.lowForLesson && readingAgeMs != null && readingAgeMs <= FRESH_READING_MS)
+            ) {
                 effects += energyPass(energy, settings.sessionMinutes, silent = false)
                 return Decision(effects, st)
             }
