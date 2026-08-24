@@ -98,6 +98,51 @@ class GateEngineTest {
     }
 
     @Test
+    fun `energy pass is revoked and the gate blocks once energy recovers`() {
+        // A live ENERGY pass, but a fresh reading now shows plenty of energy.
+        val d = decide(
+            snap(session = SessionState(
+                remainingAllowanceMs = 20 * 60_000L,
+                grantedAllowanceMs = 30 * 60_000L,
+                grantSource = GrantSource.ENERGY,
+                energy = energy(25),
+            )),
+        )
+        d.effects.only<Effect.ClearAllowance>()
+        assertEquals(blocked, d.effects.only<Effect.LaunchBlocker>().pkg)
+    }
+
+    @Test
+    fun `lesson allowance survives an energy recovery`() {
+        // A pass earned by a real lesson must NOT be revoked by high energy.
+        val d = decide(
+            snap(session = SessionState(
+                remainingAllowanceMs = 20 * 60_000L,
+                grantedAllowanceMs = 30 * 60_000L,
+                grantSource = GrantSource.LESSON,
+                energy = energy(25),
+            )),
+        )
+        assertTrue(d.effects.filterIsInstance<Effect.ClearAllowance>().isEmpty())
+        assertTrue(d.effects.filterIsInstance<Effect.LaunchBlocker>().isEmpty())
+    }
+
+    @Test
+    fun `energy pass with no fresh reading keeps running`() {
+        // Still low: the pass stays.
+        val d = decide(
+            snap(session = SessionState(
+                remainingAllowanceMs = 20 * 60_000L,
+                grantedAllowanceMs = 30 * 60_000L,
+                grantSource = GrantSource.ENERGY,
+                energy = energy(4),
+            )),
+        )
+        assertTrue(d.effects.filterIsInstance<Effect.ClearAllowance>().isEmpty())
+        assertTrue(d.effects.filterIsInstance<Effect.LaunchBlocker>().isEmpty())
+    }
+
+    @Test
     fun `allowance burns only while a blocked app is on screen`() {
         val session = SessionState(remainingAllowanceMs = 60_000L, grantedAllowanceMs = 60_000L)
         val inBlocked = decide(snap(session = session))

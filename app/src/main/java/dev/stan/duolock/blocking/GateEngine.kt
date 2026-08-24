@@ -138,7 +138,17 @@ object GateEngine {
         val enteredBlockedApp = inBlockedApp && fg != st.lastForegroundPkg
         st = st.copy(lastForegroundPkg = fg)
 
-        val remaining = session.remainingAllowanceMs - st.unflushedConsumedMs
+        // A low-energy free pass is only as good as the reading it was based
+        // on: the moment the meter shows enough for a lesson, revoke it and
+        // let the normal gate take over. Otherwise a recovered meter keeps
+        // scrolling free on a stale pass.
+        val energyPassObsolete = session.grantSource == GrantSource.ENERGY &&
+            session.grantedAllowanceMs > 0 && !energy.noReading && !energy.lowForLesson
+        if (energyPassObsolete) effects += Effect.ClearAllowance
+
+        val remaining =
+            if (energyPassObsolete) 0L
+            else session.remainingAllowanceMs - st.unflushedConsumedMs
         if (remaining > 0) {
             // Confirm the gate ran on every entry into a blocked app. The
             // allowance clock stays in the background: the only time the user
@@ -172,7 +182,7 @@ object GateEngine {
         // Allowance used up. If it just ran out, clear it -- unless energy is
         // still too low for a lesson: then extend silently instead of locking
         // the app the user is in.
-        if (session.grantedAllowanceMs != 0L && remaining <= 0) {
+        if (!energyPassObsolete && session.grantedAllowanceMs != 0L && remaining <= 0) {
             st = st.copy(unflushedConsumedMs = 0L)
             if (energy.lowForLesson && inBlockedApp) {
                 effects += energyPass(energy, settings.sessionMinutes, silent = true)
