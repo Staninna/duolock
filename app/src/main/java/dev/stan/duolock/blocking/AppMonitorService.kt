@@ -81,24 +81,12 @@ class AppMonitorService : LifecycleService() {
     private suspend fun tick() {
         val snapshot = repo.currentSnapshot()
         val now = System.currentTimeMillis()
-        // Debug builds can substitute a synthetic user to exercise Streak
-        // Saver; the fake is stamped with the current time so it never ages.
-        val debugUser =
-            if (dev.stan.duolock.BuildConfig.DEBUG)
-                dev.stan.duolock.duolingo.DebugUserOverride.user(now)
-            else null
-        val user = debugUser?.let {
-            GateEngine.User(it.totalXp, it.xpGains, it.streak, fetchedAtMs = now)
-        } ?: duoRepo.state.value.user?.let {
-            GateEngine.User(it.totalXp, it.xpGains, it.streak, duoRepo.state.value.fetchedAtMs)
-        }
-        val nowT = java.time.LocalTime.now()
         val decision = GateEngine.decide(
             snapshot = snapshot,
-            user = user,
+            user = currentUser(now),
             foreground = detector.currentForegroundPackage(),
-            now = System.currentTimeMillis(),
-            hour = nowT.hour,
+            now = now,
+            hour = java.time.LocalTime.now().hour,
             dayOfYear = java.time.LocalDate.now().dayOfYear,
             state = tickState,
             systemAllowedPackages = systemAllowedPackages(),
@@ -107,6 +95,21 @@ class AppMonitorService : LifecycleService() {
         tickState = decision.state
         decision.effects.forEach { execute(it) }
         checkWatcherAlive()
+    }
+
+    /**
+     * The Duolingo user the engine should see. Debug builds may substitute a
+     * synthetic one to exercise Streak Saver; the fake is stamped with the
+     * current time so it never ages.
+     */
+    private fun currentUser(now: Long): GateEngine.User? {
+        val debugUser =
+            if (dev.stan.duolock.BuildConfig.DEBUG)
+                dev.stan.duolock.duolingo.DebugUserOverride.user(now)
+            else null
+        debugUser?.let { return GateEngine.User(it.totalXp, it.xpGains, it.streak, fetchedAtMs = now) }
+        val state = duoRepo.state.value
+        return state.user?.let { GateEngine.User(it.totalXp, it.xpGains, it.streak, state.fetchedAtMs) }
     }
 
     /**
