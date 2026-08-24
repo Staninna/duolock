@@ -139,7 +139,9 @@ class EnergyReaderService : AccessibilityService() {
                 ?: readDrawerProgress(root)
                 ?: counter?.takeIf { it in 0..99 }
                 ?: run {
-                    if (now - lastMissLogAt > 3_000) {
+                    // Miss diagnostics are the tool for the next time Duolingo
+                    // reshuffles its UI, but they're too chatty for release.
+                    if (dev.stan.duolock.BuildConfig.DEBUG && now - lastMissLogAt > 3_000) {
                         lastMissLogAt = now
                         android.util.Log.d(
                             "DuoGateEnergy",
@@ -234,7 +236,9 @@ class EnergyReaderService : AccessibilityService() {
                     ?.firstOrNull { it.isVisibleToUser }?.text?.toString()
             ) ?: return null
         val obs = parseDrawer(timerText, progressText)
-        android.util.Log.d("DuoGateEnergy", "drawer: timer='$timerText' progress='$progressText' -> $obs")
+        if (dev.stan.duolock.BuildConfig.DEBUG) {
+            android.util.Log.d("DuoGateEnergy", "drawer: timer='$timerText' progress='$progressText' -> $obs")
+        }
         if (obs != null) lastTunedAt = now
         return obs
     }
