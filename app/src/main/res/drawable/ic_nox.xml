@@ -4,6 +4,8 @@
     android:height="120dp"
     android:viewportWidth="120"
     android:viewportHeight="120">
+    <!-- Artwork spans y 26-100; lift it so its center lands on the viewport center. -->
+    <group android:translateY="-6">
     <!-- Nox the night owl. Body -->
     <path
         android:fillColor="#6B4FBB"
@@ -39,4 +41,5 @@
     <path
         android:fillColor="#FFC24D"
         android:pathData="M60,66 l-5,7 h10 z" />
+    </group>
 </vector>
