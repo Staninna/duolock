@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import dev.stan.duolock.data.GateSnapshot
 import dev.stan.duolock.data.SettingsRepository
 import dev.stan.duolock.duolingo.DuolingoRepository
+import dev.stan.duolock.duolingo.EnergyEstimator
 import dev.stan.duolock.duolingo.EnergyStatus
 import dev.stan.duolock.duolingo.LessonVerifier
 import dev.stan.duolock.ui.theme.LumenGold
@@ -54,13 +55,14 @@ fun StatusScreen() {
     }
 
     val scope = rememberCoroutineScope()
+    val now = System.currentTimeMillis()
+    val energy = EnergyStatus.of(snapshot, now)
     Column(Modifier.padding(20.dp)) {
         Text("Status", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 val active = session.remainingAllowanceMs > 0
-                val energy = EnergyStatus.of(snapshot, System.currentTimeMillis())
                 Text(
                     when {
                         active -> "Unlocked. ${session.remainingAllowanceMs / 60_000 + 1} min of scroll time left."
@@ -101,15 +103,13 @@ fun StatusScreen() {
                         Text("Couldn't reach Duolingo (${duoState.error}).")
                     user == null -> Text("Loading…")
                     else -> {
-                        val now = System.currentTimeMillis()
-                        val energy = EnergyStatus.of(snapshot, now)
                         val units = energy.units
                         if (units == null) {
                             Text("Energy: no reading yet. Open Duolingo once with the energy reader enabled (Setup tab).")
                         } else {
                             val reading = energy.reading!!
                             val ageMin = (now - reading.atMs) / 60_000
-                            Text("Energy: about $units of ${dev.stan.duolock.duolingo.EnergyEstimator.MAX_ENERGY}")
+                            Text("Energy: about $units of ${EnergyEstimator.MAX_ENERGY}")
                             Text(
                                 "Last read ${reading.units} from Duolingo $ageMin min ago, " +
                                     "refill assumed 1 unit per ${energy.refillMinutesPerUnit} min.",
