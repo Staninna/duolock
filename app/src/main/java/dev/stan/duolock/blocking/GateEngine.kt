@@ -16,7 +16,6 @@ object GateEngine {
 
     const val POLL_MS = 1_000L
     private const val FLUSH_EVERY_MS = 10_000L
-    private const val STREAK_WARN_HOUR = 21
     /** A user fetch older than this doesn't count for the evening streak warning. */
     private const val STREAK_WARN_MAX_AGE_MS = 10 * 60_000L
 
@@ -92,7 +91,7 @@ object GateEngine {
         val xpToday = user?.let { LessonVerifier.xpToday(it.xpGains, now = now) }
 
         // Once per evening: warn if today's XP is still zero and the streak is real.
-        if (hour >= STREAK_WARN_HOUR && st.streakWarnedOnDay != dayOfYear && settings.hasAuth) {
+        if (hour >= settings.streakWarnHour && st.streakWarnedOnDay != dayOfYear && settings.hasAuth) {
             if (user == null || now - user.fetchedAtMs > STREAK_WARN_MAX_AGE_MS) {
                 effects += Effect.WantFreshUser
             } else {
@@ -144,7 +143,7 @@ object GateEngine {
             // Confirm the gate ran on every entry into a blocked app. The
             // allowance clock stays in the background: the only time the user
             // sees is when the next lesson is actually possible.
-            if (enteredBlockedApp) {
+            if (enteredBlockedApp && settings.notifyGateOpen) {
                 effects += Effect.Notify("Gate is open", energy.nextLessonSentence())
             }
             // The allowance only burns while a blocked app is actually on screen.
@@ -155,7 +154,8 @@ object GateEngine {
                     st = st.copy(unflushedConsumedMs = 0L, unflushedFallbackMs = 0L)
                 }
                 // Don't nag for a lesson that can't be done.
-                if (!energy.lowForLesson && !session.reminderSentForSession &&
+                if (settings.notifyHalfway &&
+                    !energy.lowForLesson && !session.reminderSentForSession &&
                     session.grantedAllowanceMs > 0 &&
                     remaining - POLL_MS <= session.grantedAllowanceMs / 2
                 ) {

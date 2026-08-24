@@ -35,6 +35,15 @@ data class Settings(
     // Debug builds only: whether the Debug tab is shown. Release builds have
     // no debug screen at all, so this flag is meaningless there.
     val showDebugTab: Boolean = true,
+    // How chatty the gate is. Defaults match the old hardcoded behavior.
+    /** Notification confirming the gate ran when entering a blocked app with time left. */
+    val notifyGateOpen: Boolean = true,
+    /** "You can reset the clock" reminder at half the allowance. */
+    val notifyHalfway: Boolean = true,
+    /** A low-energy reading older than this must be re-verified before it buys passes. */
+    val staleReadingMinutes: Int = 150,
+    /** From this hour, warn once per evening while today's XP is zero. */
+    val streakWarnHour: Int = 21,
 ) {
     val hasAuth: Boolean get() = jwt.isNotBlank() && userId > 0
 
@@ -100,6 +109,10 @@ class SettingsRepository(private val context: Context) {
         val STREAK_SAVER_HOUR = intPreferencesKey("streak_saver_start_hour")
         val STREAK_SAVER_ALLOWED = stringSetPreferencesKey("streak_saver_whitelist")
         val SHOW_DEBUG_TAB = booleanPreferencesKey("show_debug_tab")
+        val NOTIFY_GATE_OPEN = booleanPreferencesKey("notify_gate_open")
+        val NOTIFY_HALFWAY = booleanPreferencesKey("notify_halfway")
+        val STALE_READING_MIN = intPreferencesKey("stale_reading_minutes")
+        val STREAK_WARN_HOUR = intPreferencesKey("streak_warn_hour")
     }
 
     val snapshot: Flow<GateSnapshot> = context.dataStore.data.map { p ->
@@ -118,6 +131,10 @@ class SettingsRepository(private val context: Context) {
                 streakSaverStartHour = p[Keys.STREAK_SAVER_HOUR] ?: defaults.streakSaverStartHour,
                 streakSaverWhitelist = p[Keys.STREAK_SAVER_ALLOWED] ?: defaults.streakSaverWhitelist,
                 showDebugTab = p[Keys.SHOW_DEBUG_TAB] ?: defaults.showDebugTab,
+                notifyGateOpen = p[Keys.NOTIFY_GATE_OPEN] ?: defaults.notifyGateOpen,
+                notifyHalfway = p[Keys.NOTIFY_HALFWAY] ?: defaults.notifyHalfway,
+                staleReadingMinutes = p[Keys.STALE_READING_MIN] ?: defaults.staleReadingMinutes,
+                streakWarnHour = p[Keys.STREAK_WARN_HOUR] ?: defaults.streakWarnHour,
             ),
             session = SessionState(
                 remainingAllowanceMs = p[Keys.REMAINING] ?: 0L,
@@ -228,6 +245,18 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setStreakSaverStartHour(hour: Int) =
         context.dataStore.edit { it[Keys.STREAK_SAVER_HOUR] = hour.coerceIn(0, 23) }
+
+    suspend fun setNotifyGateOpen(on: Boolean) =
+        context.dataStore.edit { it[Keys.NOTIFY_GATE_OPEN] = on }
+
+    suspend fun setNotifyHalfway(on: Boolean) =
+        context.dataStore.edit { it[Keys.NOTIFY_HALFWAY] = on }
+
+    suspend fun setStaleReadingMinutes(min: Int) =
+        context.dataStore.edit { it[Keys.STALE_READING_MIN] = min.coerceIn(15, 1440) }
+
+    suspend fun setStreakWarnHour(hour: Int) =
+        context.dataStore.edit { it[Keys.STREAK_WARN_HOUR] = hour.coerceIn(0, 23) }
 
     suspend fun setShowDebugTab(show: Boolean) =
         context.dataStore.edit { it[Keys.SHOW_DEBUG_TAB] = show }

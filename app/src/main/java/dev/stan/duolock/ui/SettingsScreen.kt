@@ -108,6 +108,12 @@ fun SettingsScreen() {
     val saverHour = remember {
         IntField("Start hour (0-23)", 0..23, repo::setStreakSaverStartHour)
     }
+    val staleMin = remember {
+        IntField("Re-check low energy after (minutes)", 15..1440, repo::setStaleReadingMinutes)
+    }
+    val warnHour = remember {
+        IntField("Streak warning from hour (0-23)", 0..23, repo::setStreakWarnHour)
+    }
     // Blank means "auto": use the rate observed from Duolingo's energy drawer.
     var refillOverride by remember { mutableStateOf("") }
     var refillError by remember { mutableStateOf<String?>(null) }
@@ -116,6 +122,8 @@ fun SettingsScreen() {
     LaunchedEffect(settings.fallbackLessonMinutes) { fallbackMin.text = settings.fallbackLessonMinutes.toString() }
     LaunchedEffect(settings.minEnergyForLesson) { minEnergy.text = settings.minEnergyForLesson.toString() }
     LaunchedEffect(settings.streakSaverStartHour) { saverHour.text = settings.streakSaverStartHour.toString() }
+    LaunchedEffect(settings.staleReadingMinutes) { staleMin.text = settings.staleReadingMinutes.toString() }
+    LaunchedEffect(settings.streakWarnHour) { warnHour.text = settings.streakWarnHour.toString() }
     LaunchedEffect(settings.refillMinutesOverride) {
         refillOverride = settings.refillMinutesOverride?.toString() ?: ""
     }
@@ -152,6 +160,32 @@ fun SettingsScreen() {
             modifier = Modifier.fillMaxWidth(),
         )
         IntSettingField(minEnergy)
+
+        SettingsSectionHeader("Nox's voice")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(
+                checked = settings.notifyGateOpen,
+                onCheckedChange = { on -> scope.launch { repo.setNotifyGateOpen(on) } },
+            )
+            Spacer(Modifier.width(12.dp))
+            Text("Notify when you enter a blocked app with time left")
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(
+                checked = settings.notifyHalfway,
+                onCheckedChange = { on -> scope.launch { repo.setNotifyHalfway(on) } },
+            )
+            Spacer(Modifier.width(12.dp))
+            Text("Remind at half time that a lesson resets the clock")
+        }
+        IntSettingField(staleMin)
+        Text(
+            "When Nox last saw a low meter longer ago than this, he asks you to open " +
+                "Duolingo once before handing out more free passes. " +
+                "With Streak Saver active he always checks.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        IntSettingField(warnHour)
 
         SettingsSectionHeader("Streak Saver")
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -235,6 +269,8 @@ fun SettingsScreen() {
                     fallbackMin.commit()
                     minEnergy.commit()
                     saverHour.commit()
+                    staleMin.commit()
+                    warnHour.commit()
                     val refillText = refillOverride.trim()
                     val refillValue = refillText.toIntOrNull()
                     when {
