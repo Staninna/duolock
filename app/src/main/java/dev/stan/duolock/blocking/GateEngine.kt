@@ -76,91 +76,158 @@ object GateEngine {
         ownPackage: String = "dev.stan.duolock",
         duolingoPackage: String = AppMonitorService.DUOLINGO_PKG,
     ): Decision {
-        val settings = snapshot.settings
-        val session = snapshot.session
+        val tick = Tick(
+            snapshot, user, foreground, now, hour, dayOfYear, state,
+            systemAllowedPackages, ownPackage, duolingoPackage,
+        )
+        tick.run()
+        return Decision(tick.effects, tick.st)
+    }
+
+    /**
+     * One tick of the gate, written as a sequence of named policy steps. The
+     * order is load-bearing: each step in [run] may finish the tick, and
+     * everything after it assumes it didn't.
+     */
+    private class Tick(
+        snapshot: GateSnapshot,
+        private val user: User?,
+        private val foreground: String?,
+        private val now: Long,
+        private val hour: Int,
+        private val dayOfYear: Int,
+        var st: TickState,
+        private val systemAllowedPackages: Set<String>,
+        private val ownPackage: String,
+        private val duolingoPackage: String,
+    ) {
         val effects = mutableListOf<Effect>()
-        var st = state
 
-        // The write-behind counters only mean anything against a live grant.
-        if (session.grantedAllowanceMs == 0L && st.unflushedConsumedMs != 0L) {
-            st = st.copy(unflushedConsumedMs = 0L)
-        }
+        private val settings = snapshot.settings
+        private val session = snapshot.session
+        private val energy = EnergyStatus.of(snapshot, now)
+        private val xpToday = user?.let { LessonVerifier.xpToday(it.xpGains, now = now) }
 
-        if (settings.blockedPackages.isEmpty() && !settings.streakSaverEnabled) {
-            return Decision(effects, st)
-        }
+        private val readingAgeMs = energy.reading?.let { now - it.atMs }
+        private val saverArmed = settings.streakSaverEnabled && settings.hasAuth &&
+            hour >= settings.streakSaverStartHour
 
-        val energy = EnergyStatus.of(snapshot, now)
-        val xpToday = user?.let { LessonVerifier.xpToday(it.xpGains, now = now) }
+        /**
+         * Low on a reading recent enough to trust without a re-check. The
+         * limit collapses to zero while Streak Saver is armed: near the streak
+         * deadline every low reading must be re-verified.
+         */
+        private val staleLimit = if (saverArmed) 0L else settings.staleReadingMinutes * 60_000L
+        private val lowVerified = energy.lowForLesson &&
+            readingAgeMs != null && readingAgeMs <= staleLimit
 
-        // Once per evening: warn if today's XP is still zero and the streak is real.
-        if (hour >= settings.streakWarnHour && st.streakWarnedOnDay != dayOfYear && settings.hasAuth) {
-            if (user == null || now - user.fetchedAtMs > STREAK_WARN_MAX_AGE_MS) {
-                effects += Effect.WantFreshUser
+        /** Low on a reading taken minutes ago: the post-visit verification. */
+        private val lowFresh = energy.lowForLesson &&
+            readingAgeMs != null && readingAgeMs <= FRESH_READING_MS
+
+        fun run() {
+            dropStaleLedger()
+            if (settings.blockedPackages.isEmpty() && !settings.streakSaverEnabled) return
+            warnStreakAtRisk()
+            val saverActive = runStreakSaver()
+            updateCountdown(saverActive)
+
+            val fg = foreground ?: return
+            val inBlockedApp = if (saverActive) {
+                fg !in settings.streakSaverWhitelist && fg !in systemAllowedPackages
             } else {
-                st = st.copy(streakWarnedOnDay = dayOfYear)
-                if (xpToday != null && xpToday <= 0 && user.streak > 0) {
-                    effects += Effect.Notify(
-                        "Streak at risk",
-                        if (energy.waitText != null)
-                            "No XP yet today, and lesson energy refills in about ${energy.waitText}. " +
-                                "Your ${user.streak}-day streak needs a lesson before midnight."
-                        else
-                            "No XP yet today. One lesson before midnight keeps your ${user.streak}-day streak."
-                    )
-                }
+                fg in settings.blockedPackages
+            }
+            val enteredBlockedApp = inBlockedApp && fg != st.lastForegroundPkg
+            st = st.copy(lastForegroundPkg = fg)
+
+            val passObsolete = revokeObsoleteEnergyPass()
+            if (burnAllowance(passObsolete, inBlockedApp, enteredBlockedApp)) return
+            if (expireAllowance(passObsolete, inBlockedApp)) return
+            if (resolvePendingBlock(fg)) return
+            enforceBlock(fg, inBlockedApp)
+        }
+
+        /** The write-behind counters only mean anything against a live grant. */
+        private fun dropStaleLedger() {
+            if (session.grantedAllowanceMs == 0L && st.unflushedConsumedMs != 0L) {
+                st = st.copy(unflushedConsumedMs = 0L)
             }
         }
 
-        // Streak Saver locks everything (minus the whitelist) from the
-        // configured hour until midnight, while today's XP is zero. Needs the
-        // API: without data it stays off rather than locking with no exit.
-        val saverArmed = settings.streakSaverEnabled && settings.hasAuth &&
-            hour >= settings.streakSaverStartHour
-        if (saverArmed && user == null) effects += Effect.WantFreshUser
-        val saverActive = saverArmed && xpToday == 0L && (user?.streak ?: 0) > 0
-        if (saverActive && !st.saverWasActive) {
-            effects += Effect.Notify(
-                "Streak Saver active",
-                "Everything is locked until today's lesson is done. Calls and your allowed apps still work."
-            )
+        /** Once per evening: warn if today's XP is still zero and the streak is real. */
+        private fun warnStreakAtRisk() {
+            if (hour < settings.streakWarnHour || st.streakWarnedOnDay == dayOfYear ||
+                !settings.hasAuth
+            ) return
+            if (user == null || now - user.fetchedAtMs > STREAK_WARN_MAX_AGE_MS) {
+                effects += Effect.WantFreshUser
+                return
+            }
+            st = st.copy(streakWarnedOnDay = dayOfYear)
+            if (xpToday != null && xpToday <= 0 && user.streak > 0) {
+                effects += Effect.Notify(
+                    "Streak at risk",
+                    if (energy.waitText != null)
+                        "No XP yet today, and lesson energy refills in about ${energy.waitText}. " +
+                            "Your ${user.streak}-day streak needs a lesson before midnight."
+                    else
+                        "No XP yet today. One lesson before midnight keeps your ${user.streak}-day streak."
+                )
+            }
         }
-        st = st.copy(saverWasActive = saverActive)
 
-        val countdownBase = energy.nextLessonSentence()
-        effects += Effect.UpdateCountdown(
-            if (saverActive) "Streak Saver on. $countdownBase" else countdownBase
-        )
-
-        // Stale-low: the meter said "not enough" long enough ago that it must
-        // be re-read before it buys any more free passes. The lock screen's
-        // "open Duolingo" path is the re-read.
-        val readingAgeMs = energy.reading?.let { now - it.atMs }
-        val staleLimit = if (saverArmed) 0L else settings.staleReadingMinutes * 60_000L
-        val lowVerified = energy.lowForLesson &&
-            readingAgeMs != null && readingAgeMs <= staleLimit
-
-        val fg = foreground ?: return Decision(effects, st)
-        val inBlockedApp = if (saverActive) {
-            fg !in settings.streakSaverWhitelist && fg !in systemAllowedPackages
-        } else {
-            fg in settings.blockedPackages
+        /**
+         * Streak Saver locks everything (minus the whitelist) from the
+         * configured hour until midnight, while today's XP is zero. Needs the
+         * API: without data it stays off rather than locking with no exit.
+         * Returns whether the lockdown is active this tick.
+         */
+        private fun runStreakSaver(): Boolean {
+            if (saverArmed && user == null) effects += Effect.WantFreshUser
+            val saverActive = saverArmed && xpToday == 0L && (user?.streak ?: 0) > 0
+            if (saverActive && !st.saverWasActive) {
+                effects += Effect.Notify(
+                    "Streak Saver active",
+                    "Everything is locked until today's lesson is done. Calls and your allowed apps still work."
+                )
+            }
+            st = st.copy(saverWasActive = saverActive)
+            return saverActive
         }
-        val enteredBlockedApp = inBlockedApp && fg != st.lastForegroundPkg
-        st = st.copy(lastForegroundPkg = fg)
 
-        // A low-energy free pass is only as good as the reading it was based
-        // on: the moment the meter shows enough for a lesson, revoke it and
-        // let the normal gate take over. Otherwise a recovered meter keeps
-        // scrolling free on a stale pass.
-        val energyPassObsolete = session.grantSource == GrantSource.ENERGY &&
-            session.grantedAllowanceMs > 0 && !energy.noReading && !energy.lowForLesson
-        if (energyPassObsolete) effects += Effect.ClearAllowance
+        private fun updateCountdown(saverActive: Boolean) {
+            val base = energy.nextLessonSentence()
+            effects += Effect.UpdateCountdown(if (saverActive) "Streak Saver on. $base" else base)
+        }
 
-        val remaining =
-            if (energyPassObsolete) 0L
+        /**
+         * A low-energy free pass is only as good as the reading it was based
+         * on: the moment the meter shows enough for a lesson, revoke it and
+         * let the normal gate take over. Otherwise a recovered meter keeps
+         * scrolling free on a stale pass.
+         */
+        private fun revokeObsoleteEnergyPass(): Boolean {
+            val obsolete = session.grantSource == GrantSource.ENERGY &&
+                session.grantedAllowanceMs > 0 && !energy.noReading && !energy.lowForLesson
+            if (obsolete) effects += Effect.ClearAllowance
+            return obsolete
+        }
+
+        private fun remainingMs(passObsolete: Boolean): Long =
+            if (passObsolete) 0L
             else session.remainingAllowanceMs - st.unflushedConsumedMs
-        if (remaining > 0) {
+
+        /**
+         * While an allowance is live: confirm the gate on entry, burn time in
+         * blocked apps, flush periodically, remind at half time. Returns true
+         * while the allowance stays open, ending the tick.
+         */
+        private fun burnAllowance(
+            passObsolete: Boolean, inBlockedApp: Boolean, enteredBlockedApp: Boolean,
+        ): Boolean {
+            val remaining = remainingMs(passObsolete)
+            if (remaining <= 0) return false
             // Confirm the gate ran on every entry into a blocked app. The
             // allowance clock stays in the background: the only time the user
             // sees is when the next lesson is actually possible.
@@ -187,17 +254,22 @@ object GateEngine {
                     )
                 }
             }
-            if (remaining - POLL_MS > 0) return Decision(effects, st)
+            return remaining - POLL_MS > 0
         }
 
-        // Allowance used up. If it just ran out, clear it -- unless energy is
-        // still too low for a lesson: then extend silently instead of locking
-        // the app the user is in.
-        if (!energyPassObsolete && session.grantedAllowanceMs != 0L && remaining <= 0) {
+        /**
+         * Allowance used up. If it just ran out, clear it — unless energy is
+         * still too low for a lesson: then extend silently instead of locking
+         * the app the user is in. Returns true when the tick ends here.
+         */
+        private fun expireAllowance(passObsolete: Boolean, inBlockedApp: Boolean): Boolean {
+            if (passObsolete || session.grantedAllowanceMs == 0L || remainingMs(false) > 0) {
+                return false
+            }
             st = st.copy(unflushedConsumedMs = 0L)
             if (lowVerified && inBlockedApp) {
-                effects += energyPass(energy, settings.sessionMinutes, silent = true)
-                return Decision(effects, st)
+                effects += energyPass(silent = true)
+                return true
             }
             effects += Effect.ClearAllowance
             effects += Effect.Notify(
@@ -207,10 +279,18 @@ object GateEngine {
                 else
                     "You have enough energy. One lesson buys the next round."
             )
+            return false
         }
 
-        val pendingSnapshot = session.pendingXpSnapshot
-        if (pendingSnapshot != null) {
+        /**
+         * A block is pending: accrue Duolingo foreground time toward the
+         * fallback unlock, bounce back on a verified-low meter, and grant the
+         * session once a lesson (or the fallback) completes. Returns true when
+         * the tick ends here.
+         */
+        private fun resolvePendingBlock(fg: String): Boolean {
+            val pendingSnapshot = session.pendingXpSnapshot ?: return false
+
             // Fallback: count Duolingo foreground time.
             if (fg == duolingoPackage) {
                 st = st.copy(unflushedFallbackMs = st.unflushedFallbackMs + POLL_MS)
@@ -225,12 +305,10 @@ object GateEngine {
             // the pass and return them to the app they wanted. Only a reading
             // taken minutes ago counts — this is the verification a stale-low
             // reading was sent here for, so the pre-visit value must not do.
-            if (fg == duolingoPackage && energy.lowForLesson &&
-                readingAgeMs != null && readingAgeMs <= FRESH_READING_MS
-            ) {
-                effects += energyPass(energy, settings.sessionMinutes, silent = false)
+            if (fg == duolingoPackage && lowFresh) {
+                effects += energyPass(silent = false)
                 st.lastBlockedPkg?.let { effects += Effect.LaunchApp(it) }
-                return Decision(effects, st)
+                return true
             }
 
             // Be polite: only want fresh XP while the user is in Duolingo or DuoGate.
@@ -240,57 +318,56 @@ object GateEngine {
             val fallbackDone = session.fallbackAccumulatedMs + st.unflushedFallbackMs >=
                 settings.fallbackLessonMinutes * 60_000L
             val xpDone = user != null && LessonVerifier.lessonCompleted(pendingSnapshot, user.totalXp)
-            if (xpDone || fallbackDone) {
-                st = st.copy(unflushedConsumedMs = 0L, unflushedFallbackMs = 0L)
-                effects += Effect.Grant(settings.sessionMinutes * 60_000L, GrantSource.LESSON)
-                effects += Effect.Notify(
-                    "Unlocked",
-                    if (energy.waitText != null)
-                        "Lesson done. Next lesson in about ${energy.waitText}."
-                    else
-                        "Lesson done. You already have energy for another one."
-                )
-                return Decision(effects, st)
-            }
+            if (!xpDone && !fallbackDone) return false
+            st = st.copy(unflushedConsumedMs = 0L, unflushedFallbackMs = 0L)
+            effects += Effect.Grant(settings.sessionMinutes * 60_000L, GrantSource.LESSON)
+            effects += Effect.Notify(
+                "Unlocked",
+                if (energy.waitText != null)
+                    "Lesson done. Next lesson in about ${energy.waitText}."
+                else
+                    "Lesson done. You already have energy for another one."
+            )
+            return true
         }
 
-        if (inBlockedApp) {
+        /** The end of the line: lock the app on screen, or wave low energy through. */
+        private fun enforceBlock(fg: String, inBlockedApp: Boolean) {
+            if (!inBlockedApp) return
             // Never block below the lesson threshold: the gate would be a dead
             // end. But only a reading recent enough to trust skips the lock —
             // a stale one falls through to the lock screen, whose "open
             // Duolingo" path re-reads the meter and bounces the user back.
-            if (lowVerified ||
-                (energy.lowForLesson && readingAgeMs != null && readingAgeMs <= FRESH_READING_MS)
-            ) {
-                effects += energyPass(energy, settings.sessionMinutes, silent = false)
-                return Decision(effects, st)
+            if (lowVerified || lowFresh) {
+                effects += energyPass(silent = false)
+                return
             }
-            if (pendingSnapshot == null) {
+            if (session.pendingXpSnapshot == null) {
                 effects += Effect.BeginBlock(user?.totalXp ?: 0L)
                 st = st.copy(unflushedFallbackMs = 0L)
             }
             st = st.copy(lastBlockedPkg = fg)
             effects += Effect.LaunchBlocker(fg)
         }
-        return Decision(effects, st)
-    }
 
-    /**
-     * A pass sized to how long energy needs to refill up to the lesson
-     * threshold, capped at the session length so the meter is re-checked every
-     * round. `lowForLesson` guarantees a reading, so the wait is never null.
-     */
-    private fun energyPass(energy: EnergyStatus, sessionMinutes: Int, silent: Boolean): List<Effect> {
-        val untilLesson = energy.minutesUntilLesson ?: 0L
-        val waitMin = untilLesson.coerceIn(1, sessionMinutes.toLong())
-        val grant = Effect.Grant(waitMin * 60_000L, GrantSource.ENERGY)
-        if (silent) return listOf(grant)
-        return listOf(
-            grant,
-            Effect.Notify(
-                "Not enough energy, free pass",
-                "${energy.nextLessonSentence()} Until then you scroll free."
-            ),
-        )
+        /**
+         * A pass sized to how long energy needs to refill up to the lesson
+         * threshold, capped at the session length so the meter is re-checked
+         * every round. `lowForLesson` guarantees a reading, so the wait is
+         * never null.
+         */
+        private fun energyPass(silent: Boolean): List<Effect> {
+            val untilLesson = energy.minutesUntilLesson ?: 0L
+            val waitMin = untilLesson.coerceIn(1, settings.sessionMinutes.toLong())
+            val grant = Effect.Grant(waitMin * 60_000L, GrantSource.ENERGY)
+            if (silent) return listOf(grant)
+            return listOf(
+                grant,
+                Effect.Notify(
+                    "Not enough energy, free pass",
+                    "${energy.nextLessonSentence()} Until then you scroll free."
+                ),
+            )
+        }
     }
 }
