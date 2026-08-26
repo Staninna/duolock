@@ -19,8 +19,6 @@ jobs:
           java-version: 21
 
       - uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: "9.5.0"
 
       # Settings > Updates compares the release tag against the APK's
       # versionName. If they disagree the app offers an update it already is,
@@ -35,7 +33,7 @@ jobs:
           echo "tag $GITHUB_REF_NAME matches versionName $version"
 
       - name: Unit tests
-        run: gradle testDebugUnitTest
+        run: ./gradlew testDebugUnitTest
 
       - name: Decode release keystore
         run: echo "${{ secrets.RELEASE_KEYSTORE_B64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
@@ -46,7 +44,7 @@ jobs:
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: gradle assembleRelease
+        run: ./gradlew assembleRelease
 
       # Without the keystore env vars the build silently produces an unsigned
       # APK, which installs on nothing. Better to fail the release than to

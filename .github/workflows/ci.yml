@@ -25,17 +25,15 @@ jobs:
           java-version: 21
 
       - uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: "9.5.0"
 
       - name: Unit tests
-        run: gradle testDebugUnitTest
+        run: ./gradlew testDebugUnitTest
 
       - name: Lint
-        run: gradle lintDebug
+        run: ./gradlew lintDebug
 
       - name: Build debug APK
-        run: gradle assembleDebug
+        run: ./gradlew assembleDebug
 
       - uses: actions/upload-artifact@v7
         with:

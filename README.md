@@ -109,9 +109,9 @@ Everything stays on your phone. The only network traffic is to the Duolingo API,
 A standard Android Gradle project. Open it in Android Studio, or:
 
 ```sh
-gradle assembleDebug
+./gradlew assembleDebug
 adb install app/build/outputs/apk/debug/app-debug.apk
-gradle test
+./gradlew test
 ```
 
 Requirements: JDK 17, Android SDK with compileSdk 36. Runs on Android 8.0 (minSdk 26) and up.
