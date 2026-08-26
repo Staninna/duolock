@@ -38,6 +38,21 @@ fun UpdatesSection() {
     var needsPermission by remember { mutableStateOf(false) }
 
     SettingsSectionHeader("Updates")
+
+    // A dev build cannot update itself: the release APK has a different package
+    // id, so installing it would add a second app rather than replace this one.
+    // Saying "you're up to date" here would be true only by accident -- Version
+    // .parse rejects the "-dev" suffix, so the check always returns UpToDate no
+    // matter what has been released.
+    if (dev.stan.duolock.BuildConfig.DEBUG) {
+        Text(
+            "Dev build ${updater.currentVersion} — installed from the laptop, not from a " +
+                "release. Updates go to the release build, which is installed alongside this one.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        return
+    }
+
     Text("You're running version ${updater.currentVersion}.", style = MaterialTheme.typography.bodySmall)
 
     val busy = state is Updater.State.Checking ||

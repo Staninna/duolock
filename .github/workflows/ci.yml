@@ -39,6 +39,20 @@ jobs:
               -dname "C=US, O=Android, CN=Android Debug"
           fi
 
+      # The updater's repo constant is the one thing a copy-pasted app gets
+      # wrong silently: it would check another app's releases and report "up to
+      # date" forever, or hand the user the wrong APK.
+      - name: Updater must point at this repo
+        run: |
+          file=$(find app/src/main -name GithubReleases.kt | head -1)
+          if [ -z "$file" ]; then echo "no updater in this app, skipping"; exit 0; fi
+          declared=$(grep -oE '"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"' "$file" | head -1 | tr -d '"')
+          if [ "$declared" != "$GITHUB_REPOSITORY" ]; then
+            echo "::error::updater points at '$declared' but this repo is '$GITHUB_REPOSITORY'"
+            exit 1
+          fi
+          echo "updater points at $declared"
+
       - name: Unit tests
         run: ./gradlew testDebugUnitTest
 
