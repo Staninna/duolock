@@ -8,6 +8,9 @@ import androidx.compose.ui.graphics.Color
 // Nox's midnight sky, with Lumen's firefly gold as the accent.
 val LumenGold = Color(0xFFFFC24D)
 
+// The lock screen's third mood: an old reading Nox wants to re-check.
+val StaleCoral = Color(0xFFE98A6B)
+
 private val DarkColors = darkColorScheme(
     primary = Color(0xFF9B82E0),
     onPrimary = Color(0xFF1E1433),

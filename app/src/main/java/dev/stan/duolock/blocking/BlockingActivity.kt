@@ -10,6 +10,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -31,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -41,6 +44,7 @@ import dev.stan.duolock.ui.InstalledApps
 import dev.stan.duolock.ui.NoxWithLumen
 import dev.stan.duolock.ui.theme.DuoGateTheme
 import dev.stan.duolock.ui.theme.LumenGold
+import dev.stan.duolock.ui.theme.StaleCoral
 import kotlinx.coroutines.delay
 
 class BlockingActivity : ComponentActivity() {
@@ -85,11 +89,13 @@ class BlockingActivity : ComponentActivity() {
                 }
                 val energy = EnergyStatus.of(snapshot, now)
                 val readingAge = energy.reading?.let { now - it.atMs }
+                val staleLow = energy.lowForLesson && readingAge != null &&
+                    readingAge > snapshot.settings.staleReadingMinutes * 60_000L
                 BlockScreen(
                     appLabel = blockedAppLabel,
                     energy = energy,
-                    staleLow = energy.lowForLesson && readingAge != null &&
-                        readingAge > snapshot.settings.staleReadingMinutes * 60_000L,
+                    readingAgeMinutes = readingAge?.let { it / 60_000L },
+                    staleLow = staleLow,
                     onOpenDuolingo = { openDuolingo() },
                     onGoHome = { goHome() },
                 )
@@ -123,16 +129,80 @@ class BlockingActivity : ComponentActivity() {
     }
 }
 
+/**
+ * The three things the lock screen can be saying, kept apart on purpose: they
+ * used to share a headline and a "Do a lesson" button, so "Nox wants to
+ * re-check your energy" read as "go do a lesson".
+ */
+private class BlockCopy(
+    val chip: String,
+    val accent: Color,
+    val headline: String,
+    val body: String,
+    val primaryLabel: String,
+)
+
+private fun ageText(minutes: Long): String = when {
+    minutes < 90 -> "$minutes min"
+    minutes < 48 * 60 -> "${(minutes + 30) / 60} hours"
+    else -> "${minutes / (24 * 60)} days"
+}
+
+@Composable
+private fun StateChip(label: String, accent: Color) {
+    Surface(
+        color = Color.Transparent,
+        shape = RoundedCornerShape(50),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.7f)),
+    ) {
+        Text(
+            label.uppercase(),
+            style = MaterialTheme.typography.labelMedium,
+            color = accent,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+        )
+    }
+}
+
 @Composable
 private fun BlockScreen(
     appLabel: String,
     energy: EnergyStatus,
+    readingAgeMinutes: Long? = null,
     staleLow: Boolean = false,
     onOpenDuolingo: () -> Unit,
     onGoHome: () -> Unit,
 ) {
     // With no reading the gate stays optimistic: a lesson might be possible.
     val lessonPossible = energy.waitText == null
+    val copy = when {
+        staleLow -> BlockCopy(
+            chip = "Checking your energy",
+            accent = StaleCoral,
+            headline = "Nox wants a second look",
+            body = "His last reading said you were empty" +
+                (readingAgeMinutes?.let { ", but it's ${ageText(it)} old" } ?: ", but it's old") +
+                ". Open Duolingo so he can see the meter. Still empty? " +
+                "You go straight through — no lesson needed.",
+            primaryLabel = "Open Duolingo so Nox can look",
+        )
+        lessonPossible -> BlockCopy(
+            chip = "Lesson ready",
+            accent = MaterialTheme.colorScheme.primary,
+            headline = "$appLabel is locked",
+            body = "Finish a Duolingo lesson to unlock your apps. " +
+                "DuoGate checks automatically. Just come back when you're done.",
+            primaryLabel = "Do a lesson",
+        )
+        else -> BlockCopy(
+            chip = "Refilling · ${energy.waitText}",
+            accent = LumenGold,
+            headline = "$appLabel is locked",
+            body = "Not enough energy for a lesson yet — about ${energy.waitText} to go. " +
+                "Open Duolingo anyway and DuoGate will let you through in the meantime.",
+            primaryLabel = "Open Duolingo",
+        )
+    }
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             modifier = Modifier
@@ -144,42 +214,35 @@ private fun BlockScreen(
             // Nox watches; Lumen flies around her, glowing with the live energy level.
             NoxWithLumen(energy = energy.units)
             Spacer(Modifier.height(16.dp))
+            StateChip(copy.chip, copy.accent)
+            Spacer(Modifier.height(12.dp))
             energy.units?.let { units ->
                 Text(
-                    "Lumen's light: $units of 25",
+                    "Lumen's light: $units of 25" +
+                        if (staleLow && readingAgeMinutes != null) " (read ${ageText(readingAgeMinutes)} ago)" else "",
                     style = MaterialTheme.typography.bodySmall,
                     color = LumenGold,
                 )
                 Spacer(Modifier.height(8.dp))
             }
             Text(
-                "$appLabel is locked",
+                copy.headline,
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                when {
-                    staleLow ->
-                        "Nox thinks you're out of energy, but that reading is hours old. " +
-                            "Open Duolingo so he can check. If you're still empty, you go straight through."
-                    lessonPossible ->
-                        "Finish a Duolingo lesson to unlock your apps. " +
-                            "DuoGate checks automatically. Just come back when you're done."
-                    else ->
-                        "Not enough energy for a lesson yet. About ${energy.waitText} " +
-                            "until you can do one. Open Duolingo and DuoGate will let you through in the meantime."
-                },
+                copy.body,
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(40.dp))
             Button(onClick = onOpenDuolingo, modifier = Modifier.fillMaxWidth()) {
-                Text("Do a lesson")
+                Text(copy.primaryLabel)
             }
             Spacer(Modifier.height(12.dp))
-            if (lessonPossible) {
+            if (lessonPossible && !staleLow) {
                 Text(
                     "Out of energy? Open Duolingo anyway. DuoGate reads the meter and lets you through on its own.",
                     style = MaterialTheme.typography.bodySmall,
