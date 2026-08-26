@@ -219,6 +219,8 @@ fun SettingsScreen() {
             }
         }
 
+        UpdatesSection()
+
         SettingsSectionHeader("Duolingo account")
         TokenTextField(token)
         var guideOpen by remember { mutableStateOf(false) }
