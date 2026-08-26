@@ -31,6 +31,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Its own package id and data, so a dev build sits beside the real
+            // gate rather than replacing it. A fresh .dev install starts with an
+            // empty blocked-app list, which is what makes it safe to push while
+            // away from the laptop: it cannot lock you out of your own phone.
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+        }
         release {
             isMinifyEnabled = false
             if (releaseKeystore != null) {

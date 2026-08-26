@@ -1,0 +1,5 @@
+<resources>
+    <!-- Overrides the main source set, so the launcher can tell the dev build
+         from the one installed from a GitHub release. -->
+    <string name="app_name">DuoGate dev</string>
+</resources>
