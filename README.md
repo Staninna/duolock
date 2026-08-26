@@ -118,6 +118,12 @@ Requirements: JDK 17, Android SDK with compileSdk 36. Runs on Android 8.0 (minSd
 
 Debug builds carry an extra Debug tab (hideable in Settings) with developer tools: fake energy readings, instant test passes, session reset, and reading age simulation. Release builds compile all of it away.
 
+### Cutting a release
+
+Bump `versionCode` and `versionName` in `app/build.gradle.kts`, commit, then push a matching `v*` tag. CI runs the tests, builds the APK signed with the release keystore, and attaches it to a generated GitHub release.
+
+`versionName` must match the tag: Settings > Updates compares the newest release tag against the running build, so a stale `versionName` makes the app offer an update it already is.
+
 ## Architecture
 
 The whole gate policy is one pure function: `GateEngine.decide(snapshot, user, foreground, time) -> effects`. No Android, network, or clock dependencies inside, which is why the unit tests can cover the decision logic directly. Services execute the returned effects; Duolingo API traffic runs outside the decision path, so the lock screen never waits on the network.
