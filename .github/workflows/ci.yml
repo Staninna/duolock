@@ -26,6 +26,19 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
+      # Runners ship no debug keystore, and AGP does not always create one:
+      # assembleDebug then dies in validateSigningDebug. This is the documented
+      # default debug identity, so the APK is identical to a local debug build.
+      - name: Ensure a debug keystore exists
+        run: |
+          if [ ! -f ~/.android/debug.keystore ]; then
+            mkdir -p ~/.android
+            keytool -genkeypair -keystore ~/.android/debug.keystore -storetype PKCS12 \
+              -storepass android -keypass android -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "C=US, O=Android, CN=Android Debug"
+          fi
+
       - name: Unit tests
         run: ./gradlew testDebugUnitTest
 
