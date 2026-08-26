@@ -13,7 +13,10 @@ import androidx.core.content.IntentCompat
 import dev.stan.duolock.BuildConfig
 import java.io.File
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
@@ -40,6 +43,9 @@ class Updater private constructor(private val app: Context) {
         data object Installing : State
         data class Failed(val message: String) : State
     }
+
+    // Survives the composable: the retry is kicked off from a broadcast callback.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state
@@ -89,9 +95,27 @@ class Updater private constructor(private val app: Context) {
         }
         _state.value = State.Installing
         try {
-            install(apk)
+            install(apk, allowSilent = true)
         } catch (e: Exception) {
             _state.value = State.Failed("Install failed: ${e.message ?: "unknown error"}")
+        }
+    }
+
+    /**
+     * Some OEM builds — HyperOS among them — refuse a silent self-update by
+     * killing the session outright ("INSTALL_FAILED_ABORTED: Permission
+     * denied") rather than reporting PENDING_USER_ACTION and letting us show
+     * the installer. So a silent attempt that fails is retried once the
+     * ordinary way, with the system's confirmation dialog.
+     */
+    private fun retryWithConfirmation(apk: File) {
+        scope.launch {
+            _state.value = State.Installing
+            try {
+                install(apk, allowSilent = false)
+            } catch (e: Exception) {
+                _state.value = State.Failed("Install failed: ${e.message ?: "unknown error"}")
+            }
         }
     }
 
@@ -131,7 +155,7 @@ class Updater private constructor(private val app: Context) {
         target
     }
 
-    private suspend fun install(apk: File) = withContext(Dispatchers.IO) {
+    private suspend fun install(apk: File, allowSilent: Boolean) = withContext(Dispatchers.IO) {
         val installer = app.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(
             PackageInstaller.SessionParams.MODE_FULL_INSTALL,
@@ -140,7 +164,7 @@ class Updater private constructor(private val app: Context) {
             // Android 12+ lets an app update *itself* without a confirmation
             // dialog. When the OS declines, the session reports
             // PENDING_USER_ACTION and we show the installer screen instead.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (allowSilent && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
             }
         }
@@ -150,7 +174,7 @@ class Updater private constructor(private val app: Context) {
                 apk.inputStream().use { it.copyTo(out) }
                 session.fsync(out)
             }
-            session.commit(statusReceiver(sessionId).intentSender)
+            session.commit(statusReceiver(sessionId, apk, allowSilent).intentSender)
         }
     }
 
@@ -159,7 +183,7 @@ class Updater private constructor(private val app: Context) {
      * which a manifest receiver in a fresh process could not do.
      */
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
-    private fun statusReceiver(sessionId: Int): PendingIntent {
+    private fun statusReceiver(sessionId: Int, apk: File, allowSilent: Boolean): PendingIntent {
         val action = "${app.packageName}.INSTALL_STATUS.$sessionId"
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
@@ -181,9 +205,13 @@ class Updater private constructor(private val app: Context) {
                         unregister(this)
                     }
                     else -> {
-                        val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
-                        _state.value = State.Failed(msg ?: "Android refused the install.")
                         unregister(this)
+                        val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+                        if (allowSilent) {
+                            retryWithConfirmation(apk)
+                        } else {
+                            _state.value = State.Failed(msg ?: "Android refused the install.")
+                        }
                     }
                 }
             }
